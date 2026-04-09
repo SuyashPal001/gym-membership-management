@@ -1,0 +1,27 @@
+meta {
+  name: 1. Create Member testpaid
+  type: http
+  seq: 1
+}
+
+post {
+  url: {{baseUrl}}/api/members
+  body: json
+  auth: none
+}
+
+body:json {
+  {
+    "gym_id": "550e8400-e29b-41d4-a716-446655440000",
+    "member_name": "testpaid",
+    "phone": "+15550000001",
+    "membership_type_id": "648b1d26-45c9-4337-9cdf-6dbd8c02c4b6"
+  }
+}
+
+script:post-response {
+  let body = res.getBody();
+  if(body.success && body.data) {
+    bru.setEnvVar("testpaid_id", body.data.id);
+  }
+}

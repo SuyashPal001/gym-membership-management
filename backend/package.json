@@ -1,0 +1,36 @@
+{
+  "name": "gym-ops-backend",
+  "version": "1.0.0",
+  "description": "Node.js backend for Gym-Ops membership management system",
+  "main": "app.js",
+  "scripts": {
+    "start": "node app.js",
+    "dev": "nodemon app.js",
+    "db:sync": "node scripts/syncDb.js",
+    "db:migrate": "npx sequelize-cli db:migrate",
+    "db:rollback": "npx sequelize-cli db:migrate:undo"
+  },
+  "dependencies": {
+    "@google-cloud/vertexai": "^1.11.0",
+    "axios": "^1.15.0",
+    "cors": "^2.8.5",
+    "dayjs": "^1.11.20",
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2",
+    "express-rate-limit": "^8.3.2",
+    "express-validator": "^7.3.1",
+    "google-auth-library": "^10.6.2",
+    "multer": "^2.1.1",
+    "node-cron": "^4.2.1",
+    "pg": "^8.11.5",
+    "pg-hstore": "^2.3.4",
+    "sequelize": "^6.37.3",
+    "sequelize-cli": "^6.6.5",
+    "twilio": "^5.13.1",
+    "uuid": "^9.0.1",
+    "winston": "^3.19.0"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.3"
+  }
+}

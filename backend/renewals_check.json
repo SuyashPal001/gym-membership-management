@@ -1,0 +1,20 @@
+{
+  "id": "c905aa60-b951-4d5c-a701-8d2bc72ed990",
+  "gym_id": "550e8400-e29b-41d4-a716-446655440000",
+  "member_name": "testrenew",
+  "phone": "+16669990002",
+  "email": null,
+  "avatar": null,
+  "last_arrival": null,
+  "membership_type_id": "648b1d26-45c9-4337-9cdf-6dbd8c02c4b6",
+  "join_date": "2026-04-08",
+  "expiry_date": "2026-05-08",
+  "status": "active",
+  "is_trial": false,
+  "payment_collected": true,
+  "last_payment_date": "2026-04-08T11:09:04.999Z",
+  "total_visits": 0,
+  "lifetime_value": 50,
+  "createdAt": "2026-04-08T10:52:23.742Z",
+  "updatedAt": "2026-04-08T11:09:05.001Z"
+}
