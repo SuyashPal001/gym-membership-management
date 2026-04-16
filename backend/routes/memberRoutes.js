@@ -37,7 +37,8 @@ const upload = multer({
 // GET /api/members/membership-types
 router.get('/membership-types', async (req, res) => {
   try {
-    const types = await memberService.getMembershipTypes();
+    // BUG 5 FIX: Pass gymId from middleware to service
+    const types = await memberService.getMembershipTypes(req.gymId);
     res.json({ success: true, data: types });
   } catch (err) {
     res.status(400).json({ success: false, message: err.message });
