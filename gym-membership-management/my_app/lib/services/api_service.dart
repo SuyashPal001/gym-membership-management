@@ -1,9 +1,8 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 
-import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:http/http.dart' as http;
-
 import '../config/api_config.dart';
 import '../models/crm_models.dart';
 import '../models/member.dart';
@@ -11,469 +10,260 @@ import '../models/payment_models.dart';
 import '../models/reminder_models.dart';
 import '../models/attendance_summary.dart';
 import '../models/attendance_session.dart';
+import '../services/auth_service.dart';
 import 'api_exception.dart';
+
+class AuthException implements Exception {
+  final String message;
+  AuthException(this.message);
+  @override
+  String toString() => message;
+}
 
 class ApiService {
   static String get baseUrl => ApiConfig.baseUrl;
+  static const Duration _timeout = Duration(seconds: 45);
 
-  static String get defaultGymId => ApiConfig.defaultGymId;
-
-  static const Duration _timeout = Duration(seconds: 5);
-
-  // ─── Reminder Operations ───────────────────────────────────────────────────
-
-  static Future<void> postReminder(String gymId, String memberId, String method) async {
-    final uri = Uri.parse('$baseUrl/reminders/$gymId/$memberId');
-    try {
-      final response = await _post(
-        uri,
-        headers: {'Content-Type': 'application/json'},
-        body: json.encode({'method': method}),
-      );
-      if (response.statusCode == 201) return;
-      throw ApiException(
-        _errorMessage(response.body, 'Failed to schedule reminder'),
-        response.statusCode,
-      );
-    } on ApiException {
-      rethrow;
-    } catch (e) {
-      _throwUnreachable(uri, e);
-    }
+  /// Helper to get authenticated headers.
+  static Future<Map<String, String>> _getAuthHeaders() async {
+    final token = await AuthService.getStoredToken();
+    if (token == null) throw AuthException('Not authenticated');
+    return {
+      'Content-Type': 'application/json',
+      'Authorization': 'Bearer $token',
+    };
   }
 
-  static Future<List<ReminderHistory>> fetchReminderHistory(String gymId, String memberId) async {
-    final uri = Uri.parse('$baseUrl/reminders/$gymId/history').replace(queryParameters: {'member_id': memberId});
+  // ─── Intercepted Network Core (With Silent Refresh) ────────────────────────
+
+  static Future<http.Response> _requestWithRetry(
+    Future<http.Response> Function(Map<String, String> headers) requestFn,
+  ) async {
     try {
-      final response = await _get(uri);
-      if (response.statusCode == 200) {
-        final Map<String, dynamic> data = json.decode(response.body);
-        final List list = data['data'];
-        if (list is! List) throw ApiException('Invalid history response');
-        return list.map((e) => ReminderHistory.fromJson(e as Map<String, dynamic>)).toList();
+      final headers = await _getAuthHeaders();
+      var response = await requestFn(headers).timeout(_timeout);
+
+      if (response.statusCode == 401) {
+        final newToken = await AuthService.refreshToken();
+        if (newToken != null) {
+          final newHeaders = await _getAuthHeaders();
+          response = await requestFn(newHeaders).timeout(_timeout);
+        } else {
+          await AuthService.signOut();
+        }
       }
-      throw ApiException(
-        _errorMessage(response.body, 'Failed to load reminder history'),
-        response.statusCode,
-      );
-    } on ApiException {
-      rethrow;
+      return response;
     } catch (e) {
-      _throwUnreachable(uri, e);
+      if (e is AuthException) rethrow;
+      _handleNetworkError(Uri.parse(baseUrl), e);
     }
+    throw Exception('Request failed');
   }
 
-  // ─── Payment Operations ──────────────────────────────────────────────────────
+  static Future<http.Response> _get(Uri uri) => _requestWithRetry((h) => http.get(uri, headers: h));
+  static Future<http.Response> _post(Uri uri, {Object? body, Duration? timeout}) => _requestWithRetry((h) => http.post(uri, headers: h, body: body).timeout(timeout ?? _timeout));
+  static Future<http.Response> _put(Uri uri, {Object? body}) => _requestWithRetry((h) => http.put(uri, headers: h, body: body).timeout(_timeout));
+  static Future<http.Response> _delete(Uri uri) => _requestWithRetry((h) => http.delete(uri, headers: h).timeout(_timeout));
 
-  static Future<List<PaymentSummary>> fetchPaymentSummaries({
-    String? gymId,
-    String? expiryFilter,
-  }) async {
-    final targetGymId = gymId ?? defaultGymId;
-    final query = expiryFilter != null ? {'expiry_filter': expiryFilter} : null;
-    final uri = Uri.parse('$baseUrl/payments/$targetGymId').replace(queryParameters: query);
-    
-    try {
-      final response = await _get(uri);
-      if (response.statusCode == 200) {
-        final Map<String, dynamic> data = json.decode(response.body);
-        final List list = data['data'];
-        return list.map((e) => PaymentSummary.fromJson(e as Map<String, dynamic>)).toList();
-      }
-      throw ApiException(
-        _errorMessage(response.body, 'Failed to load payments'),
-        response.statusCode,
-      );
-    } on ApiException {
-      rethrow;
-    } catch (e) {
-      _throwUnreachable(uri, e);
-    }
+  // ─── Auth & Identity ───────────────────────────────────────────────────────
+
+  static Future<Map<String, dynamic>> fetchMe() async {
+    final uri = Uri.parse('$baseUrl/auth/me');
+    return _parseData(await _get(uri), 'Identity sync failed');
   }
 
-  static Future<void> markPaymentAsPaid({
-    String? gymId,
-    required String memberId,
-  }) async {
-    final targetGymId = gymId ?? defaultGymId;
-    final uri = Uri.parse('$baseUrl/payments/$targetGymId/$memberId');
-    
-    try {
-      final response = await http.patch(uri).timeout(_timeout);
-      if (response.statusCode == 200) return;
-      throw ApiException(
-        _errorMessage(response.body, 'Failed to update payment'),
-        response.statusCode,
-      );
-    } catch (e) {
-      if (e is ApiException) rethrow;
-      _throwUnreachable(uri, e);
-    }
+  static Future<Map<String, dynamic>> setupGym(Map<String, dynamic> body) async {
+    final uri = Uri.parse('$baseUrl/auth/setup');
+    return _parseData(await _post(uri, body: json.encode(body)), 'Setup failed');
   }
 
-  static Future<void> sendPaymentReminder({
-    String? gymId,
-    required String memberId,
-    required String amount,
-  }) async {
-    // Uses existing manual reminder endpoint
-    return createManualReminder(
-      gymId ?? defaultGymId,
-      memberId,
-      'WHATSAPP',
-      DateTime.now(),
-      'Kindly settle your outstanding payment of ₹$amount to continue your access.',
-    );
+  // ─── Gym Profile ────────────────────────────────────────────────────────────
+
+  static Future<Map<String, dynamic>> fetchGymProfile() async {
+    final uri = Uri.parse('$baseUrl/gym');
+    return _parseData(await _get(uri), 'Load failed');
   }
 
-  // Existing methods follow...
-
-  static Future<http.Response> _get(Uri uri) async {
-    try {
-      return await http.get(uri).timeout(_timeout);
-    } on TimeoutException {
-      throw ApiException(
-        'Timed out after ${_timeout.inSeconds}s (no reply).\n\n${_connectivityHint()}',
-      );
-    }
+  static Future<void> updateGymProfile(Map<String, dynamic> updates) async {
+    final uri = Uri.parse('$baseUrl/gym');
+    final response = await _put(uri, body: json.encode(updates));
+    if (response.statusCode != 200) throw ApiException('Update failed', response.statusCode);
   }
 
-  static Future<http.Response> _post(
-    Uri uri, {
-    Map<String, String>? headers,
-    Object? body,
-  }) async {
-    try {
-      return await http.post(uri, headers: headers, body: body).timeout(_timeout);
-    } on TimeoutException {
-      throw ApiException(
-        'Timed out after ${_timeout.inSeconds}s.\n\n${_connectivityHint()}',
-      );
-    }
-  }
-
-  static Future<http.Response> _delete(Uri uri) async {
-    try {
-      return await http.delete(uri).timeout(_timeout);
-    } on TimeoutException {
-      throw ApiException(
-        'Timed out after ${_timeout.inSeconds}s.\n\n${_connectivityHint()}',
-      );
-    }
-  }
-
-  static Future<http.StreamedResponse> _sendMultipart(http.MultipartRequest request) async {
-    try {
-      return await request.send().timeout(_timeout);
-    } on TimeoutException {
-      throw ApiException(
-        'Timed out after ${_timeout.inSeconds}s.\n\n${_connectivityHint()}',
-      );
-    }
-  }
-
-  static String _connectivityHint() {
-    if (kIsWeb) {
-      return 'Web: check CORS and API URL (${ApiConfig.baseUrl}).';
-    }
-    return 'Current URL: ${ApiConfig.baseUrl}\n\n'
-        '${ApiConfig.networkTroubleshootHint}';
-  }
-
-  static Never _throwUnreachable(Uri uri, Object e) {
-    throw ApiException(
-      '${ApiConfig.describeRequestFailure(e, uri)}\n\n${_connectivityHint()}',
-    );
-  }
-
-  static String _errorMessage(String body, [String fallback = 'Request failed']) {
-    try {
-      final map = json.decode(body);
-      if (map is Map) {
-        final msg = map['message'];
-        if (msg is String && msg.isNotEmpty) return msg;
-      }
-    } catch (_) {}
-    return fallback;
-  }
-
-  // ─── Membership Types ─────────────────────────────────────────────────────────
+  // ─── Membership Types ───────────────────────────────────────────────────────
 
   static Future<List<MembershipType>> fetchMembershipTypes() async {
     final uri = Uri.parse('$baseUrl/members/membership-types');
-    try {
-      final response = await _get(uri);
-      if (response.statusCode == 200) {
-        final data = json.decode(response.body) as Map<String, dynamic>;
-        final list = data['data'];
-        if (list is! List) {
-          throw ApiException('Invalid membership types response');
-        }
-        return list
-            .map((e) => MembershipType.fromJson(e as Map<String, dynamic>))
-            .toList();
-      }
-      throw ApiException(
-        _errorMessage(response.body, 'Failed to load membership types'),
-        response.statusCode,
-      );
-    } on ApiException {
-      rethrow;
-    } catch (e) {
-      _throwUnreachable(uri, e);
-    }
+    final data = _parseData(await _get(uri), 'Fetch failed');
+    return (data as List).map((e) => MembershipType.fromJson(e)).toList();
   }
 
-  // ─── Members ──────────────────────────────────────────────────────────────────
+  // ─── Members ────────────────────────────────────────────────────────────────
 
-  static Future<List<Member>> fetchMembers(String gymId, {Map<String, String>? filters}) async {
-    final uri = Uri.parse('$baseUrl/members/$gymId').replace(queryParameters: filters);
-    try {
-      final response = await _get(uri);
-      if (response.statusCode == 200) {
-        final data = json.decode(response.body) as Map<String, dynamic>;
-        final list = data['data'];
-        if (list is! List) {
-          throw ApiException('Invalid members response');
-        }
-        return list
-            .map((e) => Member.fromJson(e as Map<String, dynamic>))
-            .toList();
-      }
-      throw ApiException(
-        _errorMessage(response.body, 'Failed to load members'),
-        response.statusCode,
-      );
-    } on ApiException {
-      rethrow;
-    } catch (e) {
-      _throwUnreachable(uri, e);
-    }
+  static Future<List<Member>> fetchMembers({Map<String, String>? filters}) async {
+    final uri = Uri.parse('$baseUrl/members').replace(queryParameters: filters);
+    final data = _parseData(await _get(uri), 'Fetch failed');
+    return (data as List).map((e) => Member.fromJson(e)).toList();
+  }
+
+  static Future<List<dynamic>> fetchAttentionMembers() async {
+    final uri = Uri.parse('$baseUrl/members/attention');
+    return _parseData(await _get(uri), 'Fetch failed');
   }
 
   static Future<Member> enrollMember(Member member) async {
     final uri = Uri.parse('$baseUrl/members');
-    try {
-      final response = await _post(
-        uri,
-        headers: {'Content-Type': 'application/json'},
-        body: json.encode(member.toJson()),
-      );
-      if (response.statusCode == 201) {
-        final data = json.decode(response.body) as Map<String, dynamic>;
-        return Member.fromJson(data['data'] as Map<String, dynamic>);
-      }
-      throw ApiException(
-        _errorMessage(response.body, 'Failed to enroll member'),
-        response.statusCode,
-      );
-    } on ApiException {
-      rethrow;
-    } catch (e) {
-      _throwUnreachable(uri, e);
-    }
+    final data = _parseData(await _post(uri, body: json.encode(member.toJson())), 'Enrollment failed');
+    return Member.fromJson(data);
   }
 
-  static Future<bool> deleteMember(String gymId, String memberId) async {
-    final uri = Uri.parse('$baseUrl/members/$gymId/$memberId');
-    try {
-      final response = await _delete(uri);
-      return response.statusCode == 200;
-    } catch (e) {
-      _throwUnreachable(uri, e);
-    }
+  static Future<void> deleteMember(String memberId) async {
+    final uri = Uri.parse('$baseUrl/members/$memberId');
+    final res = await _delete(uri);
+    if (res.statusCode != 200) throw ApiException('Delete failed', res.statusCode);
   }
 
-  static Future<Member> renewMembership(
-    String gymId,
-    String memberId,
-    String membershipTypeId,
-  ) async {
-    final uri = Uri.parse('$baseUrl/members/$gymId/$memberId/renew');
-    try {
-      final response = await _post(
-        uri,
-        headers: {'Content-Type': 'application/json'},
-        body: json.encode({'membership_type_id': membershipTypeId}),
-      );
-      if (response.statusCode == 200) {
-        final data = json.decode(response.body) as Map<String, dynamic>;
-        return Member.fromJson(data['data'] as Map<String, dynamic>);
-      }
-      throw ApiException(
-        _errorMessage(response.body, 'Failed to renew membership'),
-        response.statusCode,
-      );
-    } on ApiException {
-      rethrow;
-    } catch (e) {
-      _throwUnreachable(uri, e);
-    }
+  static Future<Map<String, dynamic>> uploadAvatar(String memberId, String base64Image) async {
+    final uri = Uri.parse('$baseUrl/members/$memberId/avatar');
+    return _parseData(await _post(uri, body: json.encode({'image': base64Image})), 'Upload failed');
   }
 
-  // ─── Member Profile Integration ──────────────────────────────────────────────
-
-  static Future<MemberStats> fetchMemberStats(String gymId, String memberId) async {
-    final uri = Uri.parse('$baseUrl/members/$gymId/$memberId/stats');
-    try {
-      final response = await _get(uri);
-      if (response.statusCode == 200) {
-        final data = json.decode(response.body) as Map<String, dynamic>;
-        return MemberStats.fromJson(data['data'] as Map<String, dynamic>);
-      }
-      throw ApiException(
-        _errorMessage(response.body, 'Failed to load stats'),
-        response.statusCode,
-      );
-    } on ApiException {
-      rethrow;
-    } catch (e) {
-      _throwUnreachable(uri, e);
-    }
+  static Future<MemberStats> fetchMemberStats(String memberId) async {
+    final uri = Uri.parse('$baseUrl/members/$memberId/stats');
+    return MemberStats.fromJson(_parseData(await _get(uri), 'Fetch failed'));
   }
 
-  static Future<String> uploadAvatar(String gymId, String memberId, String filepath) async {
-    final uri = Uri.parse('$baseUrl/members/$gymId/$memberId/avatar');
-    try {
-      final request = http.MultipartRequest('POST', uri)
-        ..files.add(await http.MultipartFile.fromPath('avatar', filepath));
-      final res = await _sendMultipart(request);
-      final respStr = await res.stream.bytesToString().timeout(_timeout);
-      if (res.statusCode == 200) {
-        final data = json.decode(respStr) as Map<String, dynamic>;
-        final inner = data['data'] as Map<String, dynamic>?;
-        final url = inner?['avatarUrl'] as String?;
-        if (url != null && url.isNotEmpty) return url;
-        throw ApiException('Invalid avatar response');
-      }
-      throw ApiException(_errorMessage(respStr, 'Avatar upload failed'), res.statusCode);
-    } on ApiException {
-      rethrow;
-    } catch (e) {
-      if (e is TimeoutException) {
-        throw ApiException(
-          'Timed out reading response.\n\n${_connectivityHint()}',
-        );
-      }
-      _throwUnreachable(uri, e);
-    }
+  static Future<Member> renewMembership(String memberId, String membershipTypeId) async {
+    final uri = Uri.parse('$baseUrl/members/$memberId/renew');
+    final data = _parseData(await _post(uri, body: json.encode({'membership_type_id': membershipTypeId})), 'Renew failed');
+    return Member.fromJson(data);
   }
 
-  static Future<void> createManualReminder(
-    String gymId,
-    String memberId,
-    String method,
-    DateTime scheduledDate,
-    String message,
-  ) async {
-    final uri = Uri.parse('$baseUrl/members/$gymId/$memberId/reminders/manual');
-    try {
-      final response = await _post(
-        uri,
-        headers: {'Content-Type': 'application/json'},
-        body: json.encode({
-          'method': method,
-          'scheduled_date': scheduledDate.toUtc().toIso8601String(),
-          'payload': method == 'WHATSAPP'
-              ? {'message': message}
-              : {'guestName': 'Member', 'type': message}
-        }),
-      );
-      if (response.statusCode == 201) return;
-      throw ApiException(
-        _errorMessage(response.body, 'Failed to schedule reminder'),
-        response.statusCode,
-      );
-    } on ApiException {
-      rethrow;
-    } catch (e) {
-      _throwUnreachable(uri, e);
-    }
+  static Future<void> updateMember(String memberId, Map<String, dynamic> updates) async {
+    final uri = Uri.parse('$baseUrl/members/$memberId');
+    final res = await _put(uri, body: json.encode(updates));
+    if (res.statusCode != 200) throw ApiException('Update failed', res.statusCode);
   }
 
-  // ─── Attendance Operations ──────────────────────────────────────────────────
+  // ─── Attendance ─────────────────────────────────────────────────────────────
 
-  static Future<List<AttendanceSession>> fetchLiveAttendance(String gymId) async {
-    final uri = Uri.parse('$baseUrl/attendance/$gymId/today');
-    try {
-      final response = await _get(uri);
-      print("RAW LIVE ATTENDANCE RESPONSE: ${response.statusCode} - ${response.body}");
-      if (response.statusCode == 200) {
-        final data = json.decode(response.body) as Map<String, dynamic>;
-        final currentlyIn = data['data']?['currently_in'];
-        if (currentlyIn is! List) throw ApiException('Invalid live attendance response');
-        return currentlyIn.map((e) => AttendanceSession.fromJson(e as Map<String, dynamic>)).toList();
-      }
-      throw ApiException(
-        _errorMessage(response.body, 'Failed to load live attendance'),
-        response.statusCode,
-      );
-    } on ApiException {
-      rethrow;
-    } catch (e) {
-      _throwUnreachable(uri, e);
-    }
+  static Future<Map<String, dynamic>> scanAttendance(String phone) async {
+    final uri = Uri.parse('$baseUrl/attendance/scan');
+    return _parseData(await _post(uri, body: json.encode({'phone': phone})), 'Scan failed');
   }
 
-  static Future<AttendanceSummary> fetchAttendanceSummary(String gymId, String memberId) async {
-    final uri = Uri.parse('$baseUrl/members/$gymId/$memberId/attendance-summary');
-    try {
-      final response = await _get(uri);
-      if (response.statusCode == 200) {
-        final data = json.decode(response.body) as Map<String, dynamic>;
-        return AttendanceSummary.fromJson(data['data'] as Map<String, dynamic>);
-      }
-      throw ApiException(
-        _errorMessage(response.body, 'Failed to load attendance summary'),
-        response.statusCode,
-      );
-    } on ApiException {
-      rethrow;
-    } catch (e) {
-      _throwUnreachable(uri, e);
-    }
+  static Future<List<AttendanceSession>> fetchLiveAttendance() async {
+    final uri = Uri.parse('$baseUrl/attendance/today');
+    final data = _parseData(await _get(uri), 'Fetch failed');
+    return (data['currently_in'] as List).map((e) => AttendanceSession.fromJson(e)).toList();
   }
 
-  static Future<List<AttendanceSession>> fetchAttendanceHistory(String gymId, String memberId) async {
-    final uri = Uri.parse('$baseUrl/members/$gymId/$memberId/attendance-history');
-    try {
-      final response = await _get(uri);
-      if (response.statusCode == 200) {
-        final data = json.decode(response.body) as Map<String, dynamic>;
-        final list = data['data'];
-        if (list is! List) throw ApiException('Invalid attendance history response');
-        return list.map((e) => AttendanceSession.fromJson(e as Map<String, dynamic>)).toList();
-      }
-      throw ApiException(
-        _errorMessage(response.body, 'Failed to load attendance history'),
-        response.statusCode,
-      );
-    } on ApiException {
-      rethrow;
-    } catch (e) {
-      _throwUnreachable(uri, e);
-    }
+  static Future<AttendanceSummary> fetchMemberAttendanceSummary(String memberId) async {
+    final uri = Uri.parse('$baseUrl/members/$memberId/attendance-summary');
+    return AttendanceSummary.fromJson(_parseData(await _get(uri), 'Fetch failed'));
   }
-  static Future<List<dynamic>> scanLedger(String base64Image) async {
+
+  static Future<List<AttendanceSession>> fetchMemberAttendanceHistory(String memberId) async {
+    final uri = Uri.parse('$baseUrl/members/$memberId/attendance-history');
+    final data = _parseData(await _get(uri), 'Fetch failed');
+    return (data as List).map((e) => AttendanceSession.fromJson(e)).toList();
+  }
+
+  // ─── Payments ───────────────────────────────────────────────────────────────
+
+  static Future<List<PaymentSummary>> fetchPaymentSummaries({String? expiryFilter}) async {
+    final query = expiryFilter != null ? {'expiry_filter': expiryFilter} : null;
+    final uri = Uri.parse('$baseUrl/payments').replace(queryParameters: query);
+    final data = _parseData(await _get(uri), 'Fetch failed');
+    return (data as List).map((e) => PaymentSummary.fromJson(e)).toList();
+  }
+
+  static Future<void> processPayment(String memberId) async {
+    final uri = Uri.parse('$baseUrl/payments/$memberId');
+    final res = await _post(uri);
+    if (res.statusCode != 200) throw ApiException('Payment failed', res.statusCode);
+  }
+
+  static Future<void> markPaymentAsPaid({required String memberId}) async {
+    final uri = Uri.parse('$baseUrl/payments/$memberId/mark-paid');
+    final response = await _post(uri);
+    if (response.statusCode != 200) throw ApiException('Failed to mark payment as paid', response.statusCode);
+  }
+
+  // ─── Reminders ──────────────────────────────────────────────────────────────
+
+  static Future<void> postReminder(String memberId, String method) async {
+    final uri = Uri.parse('$baseUrl/reminders/$memberId');
+    final res = await _post(uri, body: json.encode({'method': method}));
+    if (res.statusCode != 201 && res.statusCode != 200) throw ApiException('Reminder failed', res.statusCode);
+  }
+
+  static Future<List<ReminderHistory>> fetchReminderHistory(String memberId) async {
+    final uri = Uri.parse('$baseUrl/reminders/history').replace(queryParameters: {'member_id': memberId});
+    final data = _parseData(await _get(uri), 'Fetch failed');
+    return (data as List).map((e) => ReminderHistory.fromJson(e)).toList();
+  }
+
+  static Future<void> createManualReminder(String memberId, String method, DateTime date, String msg) async {
+    final uri = Uri.parse('$baseUrl/reminders/$memberId');
+    final res = await _post(uri, body: json.encode({'method': method, 'payload': {'message': msg}}));
+    if (res.statusCode != 201 && res.statusCode != 200) throw ApiException('Reminder failed', res.statusCode);
+  }
+
+  // ─── AI & Voice ─────────────────────────────────────────────────────────────
+
+  static Future<Map<String, dynamic>> scanLedger(String imageBase64) async {
     final uri = Uri.parse('$baseUrl/ai/scan-book');
-    try {
-      final response = await _post(
-        uri,
-        headers: {'Content-Type': 'application/json'},
-        body: json.encode({'image': base64Image}),
-      );
-      if (response.statusCode == 200) {
-        final data = json.decode(response.body) as Map<String, dynamic>;
-        return data['data'] as List<dynamic>;
-      }
-      throw ApiException(
-        _errorMessage(response.body, 'AI Scan Failed'),
-        response.statusCode,
-      );
-    } on ApiException {
-      rethrow;
-    } catch (e) {
-      _throwUnreachable(uri, e);
-    }
+    return _parseData(await _post(uri, body: json.encode({'imageBase64': imageBase64}), timeout: const Duration(seconds: 90)), 'Scan failed');
+  }
+
+  static Future<Map<String, dynamic>> confirmLedgerScan(String scanId, List<dynamic> entries) async {
+    final uri = Uri.parse('$baseUrl/ai/scan/$scanId/confirm');
+    return _parseData(await _post(uri, body: json.encode({'entries': entries})), 'Confirmation failed');
+  }
+
+  static Future<List<dynamic>> extractLogbook(String base64Image, String mimeType) async {
+    final uri = Uri.parse('$baseUrl/ai/extract-logbook');
+    final data = _parseData(await _post(uri, body: json.encode({'imageBase64': base64Image, 'mimeType': mimeType})), 'Extraction failed');
+    return data['entries'] as List<dynamic>;
+  }
+
+  static Future<Map<String, dynamic>> startVoiceSession() async {
+    final uri = Uri.parse('$baseUrl/voice/start');
+    return _parseData(await _post(uri), 'Voice start failed');
+  }
+
+  static Future<Map<String, dynamic>> sendVoiceMessage(String sessionId, String text, List<dynamic> history) async {
+    final uri = Uri.parse('$baseUrl/voice/message');
+    return _parseData(await _post(uri, body: json.encode({'session_id': sessionId, 'text': text, 'history': history})), 'Message failed');
+  }
+
+  static Future<Map<String, dynamic>> endVoiceSession(String sessionId) async {
+    final uri = Uri.parse('$baseUrl/voice/end');
+    return _parseData(await _post(uri, body: json.encode({'session_id': sessionId})), 'End failed');
+  }
+
+  static Future<String> transcribeAudio(String audioBase64) async {
+    final uri = Uri.parse('$baseUrl/voice/transcribe');
+    final data = _parseData(await _post(uri, body: json.encode({'audioBase64': audioBase64, 'languageCode': 'hi-IN'})), 'Transcription failed');
+    return data['text'] as String;
+  }
+
+  static Future<String> textToSpeech(String text) async {
+    final uri = Uri.parse('$baseUrl/voice/speak');
+    final data = _parseData(await _post(uri, body: json.encode({'text': text})), 'TTS failed');
+    return data['audioBase64'] as String;
+  }
+
+  // ─── Helpers ────────────────────────────────────────────────────────────────
+
+  static dynamic _parseData(http.Response res, String fallback) {
+    final body = jsonDecode(res.body);
+    if (res.statusCode >= 200 && res.statusCode < 300) return body['data'];
+    throw ApiException(body['message'] ?? fallback, res.statusCode);
+  }
+
+  static void _handleNetworkError(Uri uri, dynamic e) {
+    if (e is SocketException || e is TimeoutException) throw ApiException('Network connection error.', 0);
   }
 }

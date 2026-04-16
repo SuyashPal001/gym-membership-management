@@ -121,7 +121,6 @@ class _AddMemberScreenState extends State<AddMemberScreen> {
     setState(() => _isLoading = true);
 
     final member = Member(
-      gymId: ApiService.defaultGymId,
       memberName: _nameController.text,
       phone: _phoneController.text,
       image: _base64Image,
@@ -152,13 +151,15 @@ class _AddMemberScreenState extends State<AddMemberScreen> {
     return Scaffold(
       backgroundColor: AppColors.background,
       appBar: AppBar(
-        backgroundColor: AppColors.background,
-        elevation: 0,
         leading: IconButton(
-          icon: Icon(Icons.arrow_back_ios, color: AppColors.primaryText),
-          onPressed: () => Navigator.pop(context),
+          icon: const Icon(
+            Icons.arrow_back_ios,
+            color: Colors.white,
+            size: 18,
+          ),
+          onPressed: () => Navigator.of(context).pop(),
         ),
-        title: Text("Member Enrollment", style: TextStyle(color: AppColors.primaryText, fontWeight: FontWeight.bold)),
+        title: Text("Member Enrollment"),
       ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(24.0),

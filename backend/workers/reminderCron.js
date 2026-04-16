@@ -4,7 +4,7 @@ const utc = require('dayjs/plugin/utc');
 dayjs.extend(utc);
 
 const WorkflowReminder = require('../models/WorkflowReminder');
-const { Member } = require('../models/Member');
+const { Member, LedgerScan } = require('../models');
 const { Op } = require('sequelize');
 const { scheduleSMS } = require('../services/twilioProvider');
 const { handleCreatePhoneCall } = require('../services/retellProvider');
@@ -110,6 +110,22 @@ const initCron = () => {
 
   // Sweep the backlog immediately on server start!
   setTimeout(runReminderJobSafely, 2000);
+
+  // Daily 2am — remove stale unconfirmed scans older than 7 days
+  cron.schedule('0 2 * * *', async () => {
+    try {
+      const cutoff = dayjs.utc().subtract(7, 'day').toDate();
+      await LedgerScan.destroy({
+        where: {
+          confirmed: false,
+          scanned_at: { [Op.lt]: cutoff }
+        }
+      });
+      console.log('[CRON] Stale unconfirmed LedgerScans cleaned up');
+    } catch (err) {
+      console.error('[CRON] LedgerScan cleanup failed:', err.message);
+    }
+  });
 
   console.log('[CRON] Scheduled Reminder Worker initialized.');
 };

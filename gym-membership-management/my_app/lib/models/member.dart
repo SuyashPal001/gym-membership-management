@@ -43,7 +43,7 @@ class MembershipType {
 
 class Member {
   final String? id;
-  final String gymId;
+  final String? gymId;
   final String memberName;
   final String phone;
   final String? email;
@@ -60,7 +60,7 @@ class Member {
 
   Member({
     this.id,
-    required this.gymId,
+    this.gymId,
     required this.memberName,
     required this.phone,
     this.email,

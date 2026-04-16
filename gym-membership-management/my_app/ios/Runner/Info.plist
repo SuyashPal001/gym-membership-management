@@ -54,5 +54,9 @@
 	<string>Used to set a member profile photo.</string>
 	<key>NSCameraUsageDescription</key>
 	<string>Used to take a member profile photo.</string>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>Used to process your voice logs for member attendance and payments.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Used to record your voice notes for the AI gym assistant.</string>
 </dict>
 </plist>

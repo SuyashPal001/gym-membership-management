@@ -1,10 +1,20 @@
 const { MembershipType } = require('../models/Member');
 const sequelize = require('../config/database');
+const { Gym } = require('../models');
 
 const seed = async () => {
   try {
     await sequelize.authenticate();
     console.log('Connected to DB for seeding...');
+
+    await Gym.findOrCreate({
+      where: { id: '550e8400-e29b-41d4-a716-446655440000' },
+      defaults: {
+        owner_name: 'Owner',
+        gym_name: 'My Gym',
+        phone: null
+      }
+    });
 
     const count = await MembershipType.count();
     if (count > 0) {

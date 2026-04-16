@@ -70,7 +70,6 @@ class _MemberListScreenState extends State<MemberListScreen> {
       }
 
       final members = await ApiService.fetchMembers(
-        ApiService.defaultGymId, 
         filters: filters.isNotEmpty ? filters : null
       );
 
@@ -277,12 +276,7 @@ class _MemberListScreenState extends State<MemberListScreen> {
     return Scaffold(
       backgroundColor: AppColors.background,
       appBar: AppBar(
-        backgroundColor: Colors.transparent,
-        elevation: 0,
-        title: Text(
-          "Gym Members",
-          style: TextStyle(color: AppColors.primaryText, fontWeight: FontWeight.bold),
-        ),
+        title: Text("Gym Members"),
         actions: [
           Stack(
             alignment: Alignment.center,

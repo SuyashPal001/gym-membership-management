@@ -5,6 +5,10 @@ const { Sequelize } = require('sequelize');
 // Note: MembershipType is defined and exported from Member.js in this project structure.
 const { Member, MembershipType, WorkflowReminder, Call, AttendanceSession, Payment } = require('./Member');
 
+const LedgerScan = require('./LedgerScan')(sequelize, Sequelize.DataTypes);
+const VoiceSession = require('./VoiceSession')(sequelize, Sequelize.DataTypes);
+const Gym = require('./Gym')(sequelize, Sequelize.DataTypes);
+
 const db = {
   Member,
   MembershipType,
@@ -12,6 +16,9 @@ const db = {
   Call,
   AttendanceSession,
   Payment,
+  LedgerScan,
+  VoiceSession,
+  Gym,
   sequelize,
   Sequelize
 };
@@ -23,5 +30,7 @@ Object.keys(db).forEach(modelName => {
     db[modelName].associate(db);
   }
 });
+
+db.Gym.hasMany(db.Member, { foreignKey: 'gym_id', sourceKey: 'id' });
 
 module.exports = db;

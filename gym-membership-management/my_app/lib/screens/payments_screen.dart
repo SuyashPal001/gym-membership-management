@@ -178,7 +178,7 @@ class _PaymentsScreenState extends State<PaymentsScreen> {
   Future<void> _triggerReminder(String memberId, String method) async {
     Navigator.pop(context);
     try {
-      await ApiService.postReminder(ApiService.defaultGymId, memberId, method);
+      await ApiService.postReminder(memberId, method);
       _showSnackbar("Reminder scheduled successfully", accentColor);
     } on ApiException catch (e) {
       _showSnackbar(e.message, Colors.red);
@@ -241,19 +241,21 @@ class _PaymentsScreenState extends State<PaymentsScreen> {
     return Scaffold(
       backgroundColor: bgColor,
       appBar: AppBar(
-        title: Text("Payments", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-        backgroundColor: Colors.transparent,
-        elevation: 0,
+        leading: IconButton(
+          icon: const Icon(
+            Icons.arrow_back_ios,
+            color: Colors.white,
+            size: 18,
+          ),
+          onPressed: () => Navigator.of(context).pop(),
+        ),
+        title: Text("Payments"),
         actions: [
           IconButton(
             icon: Icon(Icons.refresh, color: Colors.white54),
             onPressed: _fetchInitialData,
           )
         ],
-        leading: IconButton(
-          icon: Icon(Icons.arrow_back_ios, color: Colors.white),
-          onPressed: () => Navigator.pop(context),
-        ),
       ),
       body: Column(
         children: [

@@ -7,19 +7,13 @@ const logger = winston.createLogger({
     winston.format.json()
   ),
   transports: [
-    new winston.format.combine(
-      winston.format.colorize(),
-      winston.format.simple()
-    ),
-    new winston.transports.Console(),
+    new winston.transports.Console({
+      format: winston.format.combine(
+        winston.format.colorize(),
+        winston.format.simple()
+      )
+    })
   ],
 });
-
-// For development convenience, we'll use a simpler console output
-if (process.env.NODE_ENV !== 'production') {
-  logger.add(new winston.transports.Console({
-    format: winston.format.simple(),
-  }));
-}
 
 module.exports = logger;

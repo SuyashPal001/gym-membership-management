@@ -180,7 +180,7 @@ class ApiConfig {
     if (kIsWeb) return 'http://localhost:5001/api';
     switch (defaultTargetPlatform) {
       case TargetPlatform.android:
-        return 'http://127.0.0.1:5001/api';
+        return 'http://10.0.2.2:5001/api'; // 10.0.2.2 = host machine from Android emulator
       case TargetPlatform.iOS:
         return 'http://127.0.0.1:5001/api';
       default:
@@ -190,8 +190,24 @@ class ApiConfig {
 
   static String get apiOrigin => Uri.parse(baseUrl).origin;
 
-  static const String defaultGymId = String.fromEnvironment(
-    'DEFAULT_GYM_ID',
-    defaultValue: '550e8400-e29b-41d4-a716-446655440000',
-  );
+
+  static const String cognitoUserPoolId = 'ap-south-1_fujnJpibc';
+  static const String cognitoClientId = '3133ldc1jrvu87ka18ce56fto9';
+  static const String cognitoDomain = 'ap-south-1fujnjpibc.auth.ap-south-1.amazoncognito.com';
+  static const String cognitoRegion = 'ap-south-1';
+  static const String googleClientIdAndroid = '***REMOVED***';
+  static const String googleClientIdWeb = '***REMOVED***';
+  static const String cognitoClientSecret = '***REMOVED***';
+
+  static String get redirectUri {
+    if (kIsWeb) {
+      final base = Uri.base;
+      final isLocalhost = base.host == 'localhost' || base.host == '127.0.0.1';
+      final origin = isLocalhost
+          ? '${base.scheme}://localhost:8080'
+          : '${base.scheme}://${base.host}';
+      return '$origin/auth/callback';
+    }
+    return 'myapp://callback';
+  }
 }

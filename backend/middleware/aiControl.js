@@ -14,16 +14,16 @@ const scanRateLimiter = rateLimit({
 
 // 2. Image Validator: Check size and MIME type
 const validateImagePayload = (req, res, next) => {
-  const { image } = req.body;
+  const image = req.body.imageBase64 || req.body.image;
 
   if (!image) {
     return res.status(400).json({ success: false, error: 'No image data provided' });
   }
 
-  // Check Size: Base64 length is ~1.33x actual size. 5MB ~= 6.7M characters
-  if (image.length > 7 * 1024 * 1024) {
+  // Check Size: Base64 length is ~1.33x actual size. 7.5MB limit for large photos
+  if (image.length > 10 * 1024 * 1024) {
     logger.warn('Payload too large', { size: image.length, ip: req.ip });
-    return res.status(413).json({ success: false, error: 'Image too large (Max 5MB)' });
+    return res.status(413).json({ success: false, error: 'Image too large (Max 7.5MB)' });
   }
 
   // Basic MIME check if data URI is present

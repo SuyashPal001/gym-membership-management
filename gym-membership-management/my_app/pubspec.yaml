@@ -15,6 +15,14 @@ dependencies:
   image_picker: ^1.1.2
   shared_preferences: ^2.3.3
   intl: ^0.19.0
+  speech_to_text: ^7.3.0
+  flutter_tts: ^4.2.5
+  just_audio: ^0.9.36
+  google_sign_in: ^6.2.1
+  url_launcher: ^6.3.0
+  app_links: ^6.3.2
+  crypto: ^3.0.3
+  google_fonts: ^6.2.1
 
 dev_dependencies:
   flutter_test:
