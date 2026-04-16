@@ -9,13 +9,19 @@ const paymentRoutes = require('./routes/paymentRoutes');
 const reminderRoutes = require('./routes/reminderRoutes');
 const attendanceRoutes = require('./routes/attendanceRoutes');
 const aiRoutes = require('./routes/aiRoutes');
+const voiceRoutes = require('./routes/voiceRoutes');
+const gymRoutes = require('./routes/gymRoutes');
 
 dotenv.config();
 
 const app = express();
 const PORT = process.env.PORT || 5001;
 
-app.use(cors());
+app.use(cors({
+  origin: '*', // for local dev only
+  methods: ['GET', 'POST', 'PUT', 'DELETE'],
+  allowedHeaders: ['Content-Type', 'Authorization']
+}));
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
@@ -28,12 +34,23 @@ app.use((req, res, next) => {
 // Serve static uploads
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
+const authRoutes = require('./routes/auth');
+const cognitoAuth = require('./middleware/cognitoAuth');
+const resolveGymId = require('./middleware/resolveGymId');
+
 // Routes
-app.use('/api/members', memberRoutes);
-app.use('/api/payments', paymentRoutes);
-app.use('/api/reminders', reminderRoutes);
-app.use('/api/attendance', attendanceRoutes);
-app.use('/api/ai', aiRoutes);
+app.use('/api/auth', authRoutes);
+
+// Protected Routes (Authentication + Gym Identity Resolution Required)
+app.use('/api/members', cognitoAuth, resolveGymId, memberRoutes);
+app.use('/api/payments', cognitoAuth, resolveGymId, paymentRoutes);
+app.use('/api/reminders', cognitoAuth, resolveGymId, reminderRoutes);
+app.use('/api/attendance', cognitoAuth, resolveGymId, attendanceRoutes);
+app.use('/api/gym', cognitoAuth, resolveGymId, gymRoutes);
+
+// AI & Voice Routes
+app.use('/api/ai', cognitoAuth, resolveGymId, aiRoutes);
+app.use('/api/voice', cognitoAuth, resolveGymId, voiceRoutes);
 
 // Daily Reset Cron (Midnight UTC)
 cron.schedule('0 0 * * *', () => {
@@ -54,3 +71,4 @@ sequelize.authenticate()
   .catch(err => {
     console.error('Database connection failed:', err);
   });
+ 

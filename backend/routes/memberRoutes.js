@@ -49,23 +49,20 @@ router.get('/membership-types', async (req, res) => {
 // POST /api/members — Enroll new member
 router.post('/', memberValidationRules, validate, async (req, res) => {
   try {
-    const member = await memberService.createMember(req.body);
+    // Inject gym_id from middleware into the creation payload
+    const payload = { ...req.body, gym_id: req.gymId };
+    const member = await memberService.createMember(payload);
     res.status(201).json({ success: true, data: member });
   } catch (err) {
     res.status(400).json({ success: false, message: err.message });
   }
 });
 
-// GET /api/members/:gym_id — Get all members of a gym
-router.get('/:gym_id', async (req, res) => {
+// GET /api/members (formerly /api/members/:gym_id) — Get all members of a gym
+router.get('/', async (req, res) => {
   try {
-    const { gym_id } = req.params;
     const { status, membership_type_id, expiring_in } = req.query;
     const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-    
-    if (!uuidRegex.test(gym_id)) {
-      return res.status(400).json({ success: false, message: 'Invalid gym_id format' });
-    }
     
     if (membership_type_id && !uuidRegex.test(membership_type_id)) {
       return res.status(400).json({ success: false, message: 'Invalid membership_type_id format' });
@@ -81,39 +78,113 @@ router.get('/:gym_id', async (req, res) => {
       return res.status(400).json({ success: false, message: 'Invalid expiring_in value' });
     }
 
-    const members = await memberService.getAllMembers(gym_id, { status, membership_type_id, expiring_in });
+    const members = await memberService.getAllMembers(req.gymId, { status, membership_type_id, expiring_in });
     res.json({ success: true, data: members });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }
 });
 
-// GET /api/members/:gym_id/:id — Get single member
-router.get('/:gym_id/:id', async (req, res) => {
+// GET /api/members/attention (formerly /api/members/:gym_id/attention)
+router.get('/attention', async (req, res) => {
   try {
-    const member = await memberService.getMemberById(req.params.id, req.params.gym_id);
+    const today = dayjs.utc().format('YYYY-MM-DD');
+    const in7Days = dayjs.utc().add(7, 'day').format('YYYY-MM-DD');
+
+    const { Op } = require('sequelize');
+    const { MembershipType } = require('../models/Member');
+
+    // Group 1 — Expiring soon (non-trial)
+    const expiring = await Member.findAll({
+      where: {
+        gym_id: req.gymId,
+        status: 'active',
+        is_trial: false,
+        expiry_date: {
+          [Op.gte]: today,
+          [Op.lte]: in7Days
+        }
+      },
+      include: [{ model: MembershipType, as: 'MembershipType', attributes: ['name'] }],
+      order: [['expiry_date', 'ASC']]
+    });
+
+    // Group 2 — Trial members
+    const trials = await Member.findAll({
+      where: {
+        gym_id: req.gymId,
+        is_trial: true,
+        status: 'trial'
+      },
+      include: [{ model: MembershipType, as: 'MembershipType', attributes: ['name'] }]
+    });
+
+    // Group 3 — Overdue
+    const overdue = await Member.findAll({
+      where: {
+        gym_id: req.gymId,
+        [Op.or]: [
+          { status: 'expired' },
+          {
+            status: 'active',
+            expiry_date: { [Op.lt]: today }
+          }
+        ]
+      },
+      include: [{ model: MembershipType, as: 'MembershipType', attributes: ['name'] }],
+      order: [['expiry_date', 'ASC']]
+    });
+
+    const combinedList = [
+      ...expiring.map(m => ({ ...m.toJSON(), label: 'expiring' })),
+      ...trials.map(m => ({ ...m.toJSON(), label: 'trial' })),
+      ...overdue.map(m => ({ ...m.toJSON(), label: 'overdue' }))
+    ];
+
+    res.json({
+      success: true,
+      data: combinedList.map(m => ({
+        id: m.id,
+        member_name: m.member_name,
+        phone: m.phone,
+        expiry_date: m.expiry_date,
+        status: m.status,
+        is_trial: m.is_trial,
+        label: m.label,
+        membership_type: m.MembershipType?.name || null
+      }))
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// GET /api/members/:id (formerly /api/members/:gym_id/:id) — Get single member
+router.get('/:id', async (req, res) => {
+  try {
+    const member = await memberService.getMemberById(req.params.id, req.gymId);
     res.json({ success: true, data: member });
   } catch (err) {
     res.status(404).json({ success: false, message: err.message });
   }
 });
 
-// PUT /api/members/:gym_id/:id — Update member details
-router.put('/:gym_id/:id', memberValidationRules, validate, async (req, res) => {
+// PUT /api/members/:id — Update member details
+router.put('/:id', memberValidationRules, validate, async (req, res) => {
   try {
-    const member = await memberService.updateMember(req.params.id, req.params.gym_id, req.body);
+    const member = await memberService.updateMember(req.params.id, req.gymId, req.body);
     res.json({ success: true, data: member });
   } catch (err) {
     res.status(400).json({ success: false, message: err.message });
   }
 });
 
-// POST /api/members/:gym_id/:id/renew — Renew membership
-router.post('/:gym_id/:id/renew', async (req, res) => {
+// POST /api/members/:id/renew — Renew membership
+router.post('/:id/renew', async (req, res) => {
   try {
     const member = await memberService.renewMembership(
       req.params.id,
-      req.params.gym_id,
+      req.gymId,
       req.body.membership_type_id
     );
     res.json({ success: true, data: member });
@@ -122,49 +193,47 @@ router.post('/:gym_id/:id/renew', async (req, res) => {
   }
 });
 
-// DELETE /api/members/:gym_id/:id — Delete member
-router.delete('/:gym_id/:id', async (req, res) => {
+// DELETE /api/members/:id — Delete member
+router.delete('/:id', async (req, res) => {
   try {
-    const result = await memberService.deleteMember(req.params.id, req.params.gym_id);
+    const result = await memberService.deleteMember(req.params.id, req.gymId);
     res.json({ success: true, ...result });
   } catch (err) {
     res.status(400).json({ success: false, message: err.message });
   }
 });
 
-// ─── Streamlined Profile Routes ──────────────────────────────────────────────────
-
-// GET /api/members/:gym_id/:id/stats — Get simplified stats
-router.get('/:gym_id/:id/stats', async (req, res) => {
+// GET /api/members/:id/stats — Get simplified stats
+router.get('/:id/stats', async (req, res) => {
   try {
-    const stats = await memberService.getMemberStats(req.params.id, req.params.gym_id);
+    const stats = await memberService.getMemberStats(req.params.id, req.gymId);
     res.json({ success: true, data: stats });
   } catch (err) {
     res.status(400).json({ success: false, message: err.message });
   }
 });
 
-// POST /api/members/:gym_id/:id/avatar — Upload avatar
-router.post('/:gym_id/:id/avatar', upload.single('avatar'), async (req, res) => {
+// POST /api/members/:id/avatar — Upload avatar
+router.post('/:id/avatar', upload.single('avatar'), async (req, res) => {
   try {
     if (!req.file) throw new Error('No file uploaded');
     const avatarUrl = `/uploads/avatars/${req.file.filename}`;
-    await memberService.updateMember(req.params.id, req.params.gym_id, { avatar: avatarUrl });
+    await memberService.updateMember(req.params.id, req.gymId, { avatar: avatarUrl });
     res.json({ success: true, data: { avatarUrl } });
   } catch (err) {
     res.status(400).json({ success: false, message: err.message });
   }
 });
 
-// POST /api/members/:gym_id/:id/reminders/manual — Mode 1: Manual Scheduling
-router.post('/:gym_id/:id/reminders/manual', async (req, res) => {
+// POST /api/members/:id/reminders/manual
+router.post('/:id/reminders/manual', async (req, res) => {
   try {
     const { method, scheduled_date, payload } = req.body;
     const reminder = await WorkflowReminder.create({
       member_id: req.params.id,
-      gym_id: req.params.gym_id,
+      gym_id: req.gymId,
       method: method || 'WHATSAPP',
-      scheduled_date: dayjs.utc(scheduled_date).toDate(), // Lock to UTC exactly
+      scheduled_date: dayjs.utc(scheduled_date).toDate(),
       payload: payload || {}
     });
     res.status(201).json({ success: true, data: reminder });
@@ -173,18 +242,14 @@ router.post('/:gym_id/:id/reminders/manual', async (req, res) => {
   }
 });
 
-// GET /api/members/:gym_id/:member_id/attendance-summary
-router.get('/:gym_id/:member_id/attendance-summary', async (req, res) => {
+// GET /api/members/:member_id/attendance-summary
+router.get('/:member_id/attendance-summary', async (req, res) => {
   try {
-    const { gym_id, member_id } = req.params;
-    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-    
-    if (!uuidRegex.test(gym_id) || !uuidRegex.test(member_id)) {
-      return res.status(400).json({ success: false, message: 'Invalid UUID format' });
-    }
+    const { member_id } = req.params;
+    const member = await Member.findOne({ where: { id: member_id, gym_id: req.gymId } });
+    if (!member) throw new Error('Member not found');
 
-    const [member, total_visits, lastSession, currentPaymentsLtv] = await Promise.all([
-      Member.findByPk(member_id),
+    const [total_visits, lastSession, currentPaymentsLtv] = await Promise.all([
       AttendanceSession.count({ where: { member_id } }),
       AttendanceSession.findOne({ 
         where: { member_id }, 
@@ -195,11 +260,6 @@ router.get('/:gym_id/:member_id/attendance-summary', async (req, res) => {
       })
     ]);
 
-    if (!member) {
-      return res.status(404).json({ success: false, message: 'Member not found' });
-    }
-
-    // Combine legacy LTV with any new Payment records
     const totalLtv = (member.lifetime_value || 0) + (currentPaymentsLtv || 0);
 
     res.json({ 
@@ -215,18 +275,12 @@ router.get('/:gym_id/:member_id/attendance-summary', async (req, res) => {
   }
 });
 
-// GET /api/members/:gym_id/:member_id/attendance-history
-router.get('/:gym_id/:member_id/attendance-history', async (req, res) => {
+// GET /api/members/:member_id/attendance-history
+router.get('/:member_id/attendance-history', async (req, res) => {
   try {
-    const { gym_id, member_id } = req.params;
-    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-    
-    if (!uuidRegex.test(gym_id) || !uuidRegex.test(member_id)) {
-      return res.status(400).json({ success: false, message: 'Invalid UUID format' });
-    }
-
+    const { member_id } = req.params;
     const sessions = await AttendanceSession.findAll({
-      where: { member_id },
+      where: { member_id, gym_id: req.gymId }, // Security: scope history to gym
       order: [['date', 'DESC'], ['check_in_time', 'DESC']]
     });
 

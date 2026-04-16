@@ -103,12 +103,64 @@
 | status | ENUM | No | 'paid' | paid, pending, failed, refunded |
 | payment_date | DATE | No | NOW | UTC timestamp |
 | method | STRING | Yes | null | |
+| reference_metadata | JSONB | Yes | null | Storage for provider-specific IDs (Twilio SID, Stripe ID) |
+
+### LedgerScan
+**Status:** ACTIVE
+
+| Column | Type | Nullable | Default | Notes |
+|--------|------|----------|---------|-------|
+| id | UUID | No | UUIDV4 | Primary Key |
+| gym_id | UUID | No | null | |
+| scanned_at | DATE | No | null | |
+| raw_extracted_json | JSONB | Yes | null | Full AI response with fuzzy match data |
+| confirmed | BOOLEAN | No | false | |
+| confirmed_at | DATE | Yes | null | |
+| total_entries | INTEGER | Yes | 0 | |
+| processed_entries | INTEGER | Yes | 0 | |
+| skipped_entries | INTEGER | Yes | 0 | |
+
+### VoiceSession
+
+**Status:** ACTIVE
+
+| Column | Type | Nullable | Default | Notes |
+|--------|------|----------|---------|-------|
+| id | UUID | No | UUIDV4 | Primary Key |
+| gym_id | UUID | No | null | |
+| started_at | DATE | No | null | |
+| ended_at | DATE | Yes | null | |
+| transcript | TEXT | Yes | null | |
+| extracted_json | JSONB | Yes | null | |
+| status | ENUM | No | 'initiated' | initiated, active, completed, failed |
+| processed | BOOLEAN | Yes | false | |
+| processed_at | DATE | Yes | null | |
+| total_logged | INTEGER | Yes | 0 | |
+| total_skipped | INTEGER | Yes | 0 | |
+
+### Gym
+
+**Status:** ACTIVE
+
+| Column | Type | Nullable | Default | Notes |
+|--------|------|----------|---------|-------|
+| id | UUID | No | UUIDV4 | Primary Key |
+| owner_name | STRING | No | null | |
+| gym_name | STRING | No | null | |
+| owner_email | STRING | No | null | Synchronized from Cognito on login |
+| phone | STRING | Yes | null | |
+| city | STRING | Yes | null | |
+| state | STRING | Yes | null | |
+| cognito_sub | STRING | No | null | Unique constraint (Cognito User ID) |
 
 ---
 
 ## Relationships Map
 
-MembershipType >──< Member
+Gym ──< Member
+Gym ──< MembershipType
+Gym ──< LedgerScan
+Gym ──< VoiceSession
 Member ──< WorkflowReminder
 Member ──< Call
 Member ──< AttendanceSession

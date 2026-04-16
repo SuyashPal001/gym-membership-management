@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../constants/app_colors.dart';
-import '../main.dart';
+import '../services/auth_service.dart';
+import '../screens/login_screen.dart';
 import 'api_server_dialog.dart';
 
 class TopBar extends StatelessWidget {
@@ -10,15 +11,23 @@ class TopBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final displayName = name ?? (globalOwnerName.isNotEmpty ? globalOwnerName : 'Alex');
+    final displayName = name ?? 'Owner';
     
+    final hour = DateTime.now().hour;
+    String greeting = 'Good Morning';
+    if (hour >= 12 && hour < 17) {
+      greeting = 'Good Afternoon';
+    } else if (hour >= 17 || hour < 5) {
+      greeting = 'Good Evening';
+    }
+
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 20.0, vertical: 10.0),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
           Text(
-            'Good Morning, $displayName 👋',
+            '$greeting, $displayName 👋',
             style: TextStyle(
               color: AppColors.primaryText,
               fontSize: 22,
@@ -36,6 +45,25 @@ class TopBar extends StatelessWidget {
                   foregroundColor: AppColors.primaryText,
                 ),
                 icon: Icon(Icons.dns, size: 22),
+              ),
+              SizedBox(width: 8),
+              IconButton(
+                tooltip: 'Sign Out',
+                onPressed: () async {
+                  await AuthService.signOut();
+                  if (context.mounted) {
+                    Navigator.pushAndRemoveUntil(
+                      context,
+                      MaterialPageRoute(builder: (_) => const LoginScreen()),
+                      (route) => false,
+                    );
+                  }
+                },
+                style: IconButton.styleFrom(
+                  backgroundColor: AppColors.cardBackground,
+                  foregroundColor: Colors.redAccent,
+                ),
+                icon: Icon(Icons.logout, size: 22),
               ),
               SizedBox(width: 8),
               Container(

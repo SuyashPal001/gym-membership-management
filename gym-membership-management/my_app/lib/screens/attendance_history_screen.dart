@@ -6,13 +6,11 @@ import '../services/api_service.dart';
 import '../constants/app_colors.dart';
 
 class AttendanceHistoryScreen extends StatefulWidget {
-  final String gymId;
   final String memberId;
   final String memberName;
 
   const AttendanceHistoryScreen({
     Key? key,
-    required this.gymId,
     required this.memberId,
     required this.memberName,
   }) : super(key: key);
@@ -39,7 +37,7 @@ class _AttendanceHistoryScreenState extends State<AttendanceHistoryScreen> {
     });
 
     try {
-      _sessions = await ApiService.fetchAttendanceHistory(widget.gymId, widget.memberId);
+      _sessions = await ApiService.fetchMemberAttendanceHistory(widget.memberId);
     } on ApiException catch (e) {
       _error = e.message;
     } catch (e) {

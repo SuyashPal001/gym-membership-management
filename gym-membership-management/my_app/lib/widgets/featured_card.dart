@@ -24,21 +24,38 @@ class FeaturedCard extends StatelessWidget {
                 Icon(Icons.mic, color: AppColors.accent, size: 28),
                 SizedBox(width: 8),
                 Text(
-                  'Gym AI Assistant',
+                  'Flexy',
                   style: TextStyle(
                     color: AppColors.primaryText,
                     fontSize: 24,
                     fontWeight: FontWeight.bold,
                   ),
                 ),
+                SizedBox(width: 10),
+                Container(
+                  width: 8,
+                  height: 8,
+                  decoration: BoxDecoration(
+                    color: Colors.greenAccent,
+                    shape: BoxShape.circle,
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.greenAccent.withOpacity(0.4),
+                        blurRadius: 4,
+                        spreadRadius: 2,
+                      )
+                    ]
+                  ),
+                ),
               ],
             ),
             SizedBox(height: 8),
             Text(
-              'Tap to track attendance, record a membership payment, or scan handwritten notebook entries.',
+              'Your AI gym assistant for daily operations',
               style: TextStyle(
                 color: AppColors.secondaryText,
                 fontSize: 14,
+                height: 1.4,
               ),
             ),
             SizedBox(height: 20),

@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
@@ -23,7 +24,6 @@ class MemberDetailScreen extends StatefulWidget {
 }
 
 class _MemberDetailScreenState extends State<MemberDetailScreen> {
-  final String _gymId = ApiService.defaultGymId;
   String get _memberId => widget.member?.id ?? '';
 
   MemberStats? _stats;
@@ -54,9 +54,9 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
 
     // Fetch in parallel for better performance
     await Future.wait([
-      ApiService.fetchMemberStats(_gymId, _memberId).then((res) => _stats = res).catchError((e) => _statsError = e.toString()),
-      ApiService.fetchReminderHistory(_gymId, _memberId).then((res) => _reminderHistory = res).catchError((_) => _reminderHistory = []),
-      ApiService.fetchAttendanceSummary(_gymId, _memberId).then((res) => _attendanceSummary = res).catchError((_) => _attendanceSummary = null),
+      ApiService.fetchMemberStats(_memberId).then((res) => _stats = res).catchError((e) { _statsError = e.toString(); return MemberStats.empty(); }),
+      ApiService.fetchReminderHistory(_memberId).then((res) => _reminderHistory = res).catchError((_) => _reminderHistory = []),
+      ApiService.fetchMemberAttendanceSummary(_memberId).then((res) => _attendanceSummary = res).catchError((_) { _attendanceSummary = null; return null; }),
     ]);
 
     print('Stats loaded: $_stats');
@@ -82,7 +82,7 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
 
   Future<void> _triggerQuickReminder(String method) async {
     try {
-      await ApiService.postReminder(_gymId, _memberId, method);
+      await ApiService.postReminder(_memberId, method);
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('$method Reminder scheduled'), backgroundColor: accentColor),
@@ -112,14 +112,24 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
     );
     if (file == null) return;
     try {
-      final url = await ApiService.uploadAvatar(_gymId, _memberId, file.path);
+      setState(() => _isLoading = true);
+      final bytes = await file.readAsBytes();
+      final base64 = base64Encode(bytes);
+      
+      final res = await ApiService.uploadAvatar(_memberId, base64);
+      final String? url = res['url'] ?? res['avatar'];
+      
       if (!mounted) return;
-      setState(() => _avatarImage = memberAvatarImageProvider(url));
+      setState(() {
+        _avatarImage = memberAvatarImageProvider(url);
+        _isLoading = false;
+      });
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Photo updated'), backgroundColor: accentColor),
       );
     } on ApiException catch (e) {
       if (!mounted) return;
+      setState(() => _isLoading = false);
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(e.message), backgroundColor: Colors.red),
       );
@@ -190,7 +200,6 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
                   Navigator.pop(context);
                   try {
                     await ApiService.createManualReminder(
-                      _gymId,
                       _memberId,
                       method,
                       scheduledDate,
@@ -234,7 +243,7 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
     final totalVisits = _stats?.totalVisits ?? 0;
     final ltv = _stats?.lifetimeValue ?? 0.0;
     final lastArrival = _stats?.lastArrival ?? "N/A";
-    final planBadge = _stats?.planBadge ?? "No Plan - \$0.00";
+    final planBadge = _stats?.planBadge ?? "No Plan - ₹0.00";
     final status = _stats?.status.toUpperCase() ?? "UNKNOWN";
     final isExpired = status == "EXPIRED";
 
@@ -244,8 +253,12 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
         backgroundColor: Colors.transparent,
         elevation: 0,
         leading: IconButton(
-          icon: Icon(Icons.arrow_back_ios, color: Colors.white),
-          onPressed: () => Navigator.pop(context),
+          icon: const Icon(
+            Icons.arrow_back_ios,
+            color: Colors.white,
+            size: 18,
+          ),
+          onPressed: () => Navigator.of(context).pop(),
         ),
         actions: [
           IconButton(
@@ -315,7 +328,7 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
               // --- Name & Status Chip ---
               Text(
                 widget.memberName,
-                style: TextStyle(color: Colors.white, fontSize: 24, fontWeight: FontWeight.bold),
+                style: const TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.bold),
               ),
               SizedBox(height: 8),
               Container(
@@ -354,7 +367,6 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
                       context,
                       MaterialPageRoute(
                         builder: (_) => AttendanceHistoryScreen(
-                          gymId: _gymId,
                           memberId: _memberId,
                           memberName: widget.member?.memberName ?? '',
                         ),
@@ -430,7 +442,7 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
                         return;
                       }
                       try {
-                        await ApiService.renewMembership(_gymId, _memberId, planId);
+                        await ApiService.renewMembership(_memberId, planId);
                         if (!mounted) return;
                         ScaffoldMessenger.of(context).showSnackBar(
                           SnackBar(content: Text('Membership renewed'), backgroundColor: accentColor),
@@ -548,7 +560,6 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
                       context,
                       MaterialPageRoute(
                         builder: (_) => ReminderHistoryScreen(
-                          gymId: _gymId,
                           memberId: _memberId,
                         ),
                       ),

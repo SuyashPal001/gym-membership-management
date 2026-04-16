@@ -5,9 +5,8 @@ const dayjs = require('dayjs');
 const utc = require('dayjs/plugin/utc');
 dayjs.extend(utc);
 
-const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-
 // POST /api/attendance/scan
+// Uses req.gymId from resolveGymId middleware
 router.post('/scan', async (req, res) => {
   try {
     const { phone } = req.body;
@@ -15,9 +14,10 @@ router.post('/scan', async (req, res) => {
       return res.status(400).json({ success: false, message: 'Phone number is required' });
     }
 
-    const member = await Member.findOne({ where: { phone } });
+    // Security fix: filter member lookup by the authenticated gym
+    const member = await Member.findOne({ where: { phone, gym_id: req.gymId } });
     if (!member) {
-      return res.status(404).json({ success: false, message: 'Member not found' });
+      return res.status(404).json({ success: false, message: 'Member not found in this gym' });
     }
 
     const today = dayjs.utc().format('YYYY-MM-DD');
@@ -32,11 +32,14 @@ router.post('/scan', async (req, res) => {
       // Check-in
       const checkInTime = dayjs.utc().toDate();
       const newSession = await AttendanceSession.create({
-        gym_id: member.gym_id,
+        gym_id: req.gymId,
         member_id: member.id,
         check_in_time: checkInTime,
         date: today
       });
+
+      // Increment total visits for the member
+      await member.increment('total_visits');
 
       return res.json({ 
         success: true, 
@@ -75,20 +78,16 @@ router.post('/scan', async (req, res) => {
   }
 });
 
-// GET /api/attendance/:gym_id/today
-router.get('/:gym_id/today', async (req, res) => {
+// GET /api/attendance/today (formerly /api/attendance/:gym_id/today)
+// Uses req.gymId from resolveGymId middleware
+router.get('/today', async (req, res) => {
   try {
-    const { gym_id } = req.params;
-    if (!uuidRegex.test(gym_id)) {
-      return res.status(400).json({ success: false, message: 'Invalid gym_id format' });
-    }
-
     const today = dayjs.utc().format('YYYY-MM-DD');
     const sessions = await AttendanceSession.findAll({
-      where: { gym_id, date: today },
+      where: { gym_id: req.gymId, date: today },
       include: [{
         model: Member,
-        attributes: ['member_name', 'avatar', 'phone']
+        attributes: ['member_name', 'avatar', 'phone', 'status', 'total_visits']
       }]
     });
 
@@ -119,22 +118,15 @@ router.get('/:gym_id/today', async (req, res) => {
   }
 });
 
-// GET /api/attendance/:gym_id/history
-router.get('/:gym_id/history', async (req, res) => {
+// GET /api/attendance/history (formerly /api/attendance/:gym_id/history)
+// Uses req.gymId from resolveGymId middleware
+router.get('/history', async (req, res) => {
   try {
-    const { gym_id } = req.params;
     const { date, member_id } = req.query;
-
-    if (!uuidRegex.test(gym_id)) {
-      return res.status(400).json({ success: false, message: 'Invalid gym_id format' });
-    }
-
-    const where = { gym_id };
+    const where = { gym_id: req.gymId };
+    
     if (date) where.date = date;
     if (member_id) {
-      if (!uuidRegex.test(member_id)) {
-        return res.status(400).json({ success: false, message: 'Invalid member_id format' });
-      }
       where.member_id = member_id;
     }
 

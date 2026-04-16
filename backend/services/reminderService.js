@@ -60,14 +60,17 @@ const reminderService = {
   },
 
   // Create manual reminder record
-  createManual: async (gym_id, member_id, method) => {
+  createManual: async (gym_id, member_id, method, payload = {}) => {
     return await WorkflowReminder.create({
       gym_id,
       member_id,
       method,
       scheduled_date: dayjs.utc().toDate(),
       scheduled: false,
-      payload: { source: 'MANUAL_TRIGGER' }
+      payload: { 
+        source: 'MANUAL_TRIGGER',
+        ...payload
+      }
     });
   },
 

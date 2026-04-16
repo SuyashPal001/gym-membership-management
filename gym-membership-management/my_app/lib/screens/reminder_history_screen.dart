@@ -5,12 +5,10 @@ import '../services/api_exception.dart';
 import '../services/api_service.dart';
 
 class ReminderHistoryScreen extends StatefulWidget {
-  final String gymId;
   final String memberId;
 
   const ReminderHistoryScreen({
     Key? key,
-    required this.gymId,
     required this.memberId,
   }) : super(key: key);
 
@@ -35,7 +33,7 @@ class _ReminderHistoryScreenState extends State<ReminderHistoryScreen> {
       _error = null;
     });
     try {
-      final history = await ApiService.fetchReminderHistory(widget.gymId, widget.memberId);
+      final history = await ApiService.fetchReminderHistory(widget.memberId);
       if (mounted) {
         setState(() {
           _history = history;

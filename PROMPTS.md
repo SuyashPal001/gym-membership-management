@@ -9,6 +9,21 @@ You are assisting with the Gym-Ops codebase. Before writing any code or analyzin
 2. Read `SCHEMA.md` to perfectly understand all database relations, constraints, and DORMANT/Off-Limit models.
 3. Read `PROMPTS.md` to see if there is an exact prompt template for the task I am about to request.
 
+Additionally, observe these strict backend rules:
+- fuse.js must be imported as const Fuse = require('fuse.js') — never destructured
+- _modelId must be gemini-2.5-flash — never gemini-1.5-flash or aliases
+- AI bridge test endpoint is GET /api/ai/test — always check this first before debugging scan failures
+
+## Voice Feature Context (April 2026)
+- Voice uses Gemini function calling — 8 tools in FUNCTION_DECLARATIONS
+- Tools write to DB in real time — no batch at end
+- System prompt: no Devanagari, mirror owner language per turn, Roman script only
+- FUNCTION_DECLARATIONS uses parametersJsonSchema not parameters
+- generateContent tools passed as: config: { tools: [{ functionDeclarations: FUNCTION_DECLARATIONS }] }
+- response.functionCalls used to detect tool calls (not candidates[0].content.parts)
+- aiService.init() must be called before accessing aiService._ai
+- Known bugs in VOICE_FEATURE.md — fix those next session
+
 Confirm that you have read these files, summarize the major architectural constraints you found, and tell me you are ready. Do not write any code yet.
 ```
 
@@ -51,7 +66,7 @@ I need to modify the Sequelize schema in `/backend/models`.
 
 Strict Constraints:
 - Check `SCHEMA.md` extensively before proceeding.
-- You are strictly forbidden from hooking into or trying to revive the `Loan.js`, `Goal.js`, `Streak.js`, or `ActivityFeed.js` models. As per PROJECT.md, they are 💀 SCHEDULED FOR REMOVAL. Do not build on them.
+- You are strictly forbidden from hooking into or trying to revive the `Loan.js`, `Goal.js`, `Streak.js`, or `ActivityFeed.js` models. As per PROJECT.md, they are ðŸ’€ SCHEDULED FOR REMOVAL. Do not build on them.
 - Ensure any `hasMany` relationships include exactly the required `{ foreignKey: '...', onDelete: 'CASCADE' }` logic where appropriate.
 - Write the exact Node.js Sequelize model code, and provide the command needed for Postgres to sync the schema without nuking data (e.g., `alter: true`).
 ```
@@ -113,3 +128,16 @@ Strict Constraints:
 
 Provide the exact markdown replacements or complete files to keep the architecture documentation pristine.
 ```
+
+## AI Ledger Scan Feature (April 2026)
+Full two-phase ledger scan implemented. Key architectural decisions:
+- LedgerScan model persists all scans before confirmation
+- fuse.js fuzzy matching handles handwriting OCR errors
+- Sequelize transactions prevent partial data on confirm
+- extractGymRecords uses @google/genai Vertex SDK — response.text is 
+  a direct string, not a function, not nested under candidates
+- _post in ApiService supports per-call timeout override via 
+  optional timeout parameter
+- scan_book_screen.dart handles requires_manual_selection flag to 
+  force manual member selection when duplicate names exist
+

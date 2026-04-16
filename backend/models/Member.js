@@ -45,11 +45,11 @@ WorkflowReminder.belongsTo(Member, { foreignKey: 'member_id' });
 Member.hasMany(Call, { foreignKey: 'member_id', onDelete: 'CASCADE' });
 Call.belongsTo(Member, { foreignKey: 'member_id' });
 
-Member.hasMany(AttendanceSession, { foreignKey: 'member_id', onDelete: 'CASCADE' });
-AttendanceSession.belongsTo(Member, { foreignKey: 'member_id' });
+Member.hasMany(AttendanceSession, { foreignKey: 'member_id', onDelete: 'CASCADE', as: 'AttendanceSessions' });
+AttendanceSession.belongsTo(Member, { foreignKey: 'member_id', as: 'Member' });
 
 // Member <-> Payment
-Member.hasMany(Payment, { foreignKey: 'member_id', onDelete: 'CASCADE' });
-Payment.belongsTo(Member, { foreignKey: 'member_id' });
+Member.hasMany(Payment, { foreignKey: 'member_id', onDelete: 'CASCADE', as: 'Payments' });
+Payment.belongsTo(Member, { foreignKey: 'member_id', as: 'Member' });
 
 module.exports = { Member, MembershipType, WorkflowReminder, Call, AttendanceSession, Payment };

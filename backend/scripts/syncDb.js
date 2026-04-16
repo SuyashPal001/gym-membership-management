@@ -12,8 +12,8 @@
 require('dotenv').config({ path: '../.env' });
 const sequelize = require('../config/database');
 
-// Import all models so Sequelize is aware of them before sync
-require('../models/Member');
+// FIX: Import the full models index so ALL models are synced, including Gym
+require('../models');
 
 const FORCE = process.argv.includes('--force');
 
@@ -26,7 +26,9 @@ const syncDatabase = async () => {
       console.log('⚠️  Running with --force: all tables will be DROPPED and re-created');
     }
 
+    // Reverted back to the original dynamic logic (without alter: true override)
     await sequelize.sync({ force: FORCE, alter: !FORCE });
+    
     console.log('✅ All models synced successfully');
     process.exit(0);
   } catch (err) {

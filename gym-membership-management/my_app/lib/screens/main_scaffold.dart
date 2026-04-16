@@ -4,6 +4,7 @@ import 'home_screen.dart';
 import 'member_list_screen.dart';
 import 'voice_log_screen.dart';
 import 'attendance_screen.dart';
+import 'profile_screen.dart';
 
 class MainScaffold extends StatefulWidget {
   @override
@@ -12,13 +13,18 @@ class MainScaffold extends StatefulWidget {
 
 class _MainScaffoldState extends State<MainScaffold> {
   int _currentIndex = 0;
+  late final List<Widget> _pages;
 
-  final List<Widget> _pages = [
-    HomeScreen(),
-    MemberListScreen(),
-    VoiceLogScreen(),
-    AttendanceScreen(), // Generic placeholder for "Profile" page for now
-  ];
+  @override
+  void initState() {
+    super.initState();
+    _pages = [
+      HomeScreen(),
+      MemberListScreen(),
+      VoiceLogScreen(),
+      ProfileScreen(onBack: () => setState(() => _currentIndex = 0)),
+    ];
+  }
 
   @override
   Widget build(BuildContext context) {

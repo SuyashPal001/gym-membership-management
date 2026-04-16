@@ -34,10 +34,9 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
       _loadError = null;
     });
     try {
-      final gymId = ApiService.defaultGymId;
       final results = await Future.wait([
-        ApiService.fetchMembers(gymId),
-        ApiService.fetchLiveAttendance(gymId),
+        ApiService.fetchMembers(),
+        ApiService.fetchLiveAttendance(),
       ]);
       final members = results[0] as List<Member>;
       final sessions = results[1] as List<AttendanceSession>;
@@ -114,12 +113,15 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
     return Scaffold(
       backgroundColor: AppColors.background,
       appBar: AppBar(
-        backgroundColor: AppColors.background,
-        elevation: 0,
         leading: IconButton(
-          icon: Icon(Icons.arrow_back_ios, color: AppColors.primaryText),
-          onPressed: () => Navigator.pop(context),
+          icon: const Icon(
+            Icons.arrow_back_ios,
+            color: Colors.white,
+            size: 18,
+          ),
+          onPressed: () => Navigator.of(context).pop(),
         ),
+        title: const Text("In Gym"),
         actions: [
           IconButton(
             tooltip: 'API server',
@@ -134,7 +136,6 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
             onPressed: _loadData,
           )
         ],
-        title: Text("In Gym", style: TextStyle(color: AppColors.primaryText, fontWeight: FontWeight.bold)),
       ),
       body: _isLoading
           ? Center(child: CircularProgressIndicator(color: AppColors.accent))
@@ -369,7 +370,6 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
                                         if (isTrial) {
                                           try {
                                             await ApiService.createManualReminder(
-                                              ApiService.defaultGymId,
                                               member.id ?? '',
                                               'WHATSAPP',
                                               DateTime.now(),

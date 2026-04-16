@@ -1,39 +1,52 @@
-const { JWT } = require('google-auth-library');
-const axios = require('axios');
+const { GoogleGenAI } = require('@google/genai');
 const logger = require('../utils/logger');
 
 class AIService {
   constructor() {
     this.isInitialized = false;
-    this._credentials = null;
-    this._projectNumber = process.env.GCP_PROJECT_NUMBER || '129404364493';
-    this._location = process.env.GCP_LOCATION || 'us-central1';
-    this._model = 'gemini-2.5-flash';
+    this._ai = null;
+    this._modelId = 'gemini-2.5-flash';
+    this.chat = this.chat.bind(this);
   }
 
   async init() {
-    if (this.isInitialized) return;
+    if (this.isInitialized && this._ai) return;
 
-    const saKey = process.env.GCP_SA_KEY;
-    if (!saKey) {
-      logger.error('CRITICAL: GCP_SA_KEY is missing from environment');
+    // CRITICAL: Overriding GOOGLE_API_KEY ensures the SDK enters Vertex AI mode
+    delete process.env.GOOGLE_API_KEY;
+
+    const saKeyBase64 = process.env.GCP_SA_KEY;
+    const projectId = process.env.GCP_PROJECT_ID;
+    const location = process.env.GCP_LOCATION || 'us-central1';
+
+    if (!saKeyBase64 || !projectId) {
+      logger.error('CRITICAL: GCP_SA_KEY or GCP_PROJECT_ID is missing');
       throw new Error('CONFIG_ERROR');
     }
 
     try {
-      const cleaned = saKey.trim().replace(/^['"]|['"]$/g, '');
-      this._credentials = JSON.parse(cleaned);
-      
-      this.jwtClient = new JWT({
-        email: this._credentials.client_email,
-        key: this._credentials.private_key.replace(/\\n/g, '\n'),
-        scopes: ['https://www.googleapis.com/auth/cloud-platform'],
+      // 1. Decode base64 service account key
+      const credentials = JSON.parse(
+        Buffer.from(saKeyBase64, 'base64').toString('utf-8')
+      );
+
+      // 2. Init with correct syntax — googleAuthOptions takes credentials directly
+      this._ai = new GoogleGenAI({
+        vertexai: true,
+        project: projectId,
+        location: location,
+        googleAuthOptions: { credentials }
       });
 
+      console.log('AI object initialized:', this._ai);
+      console.log('Models defined:', !!this._ai?.models);
+      console.log('_ai is null?', this._ai === null);
+      console.log('_ai type:', typeof this._ai);
+
       this.isInitialized = true;
-      logger.info('Sovereign AI Service Initialized', { 
-        project: this._projectNumber, 
-        location: this._location 
+      logger.info('Sovereign AI Service Initialized (@google/genai SDK)', { 
+        project: projectId, 
+        location: location 
       });
     } catch (e) {
       logger.error('Sovereign AI Init Failed', { error: e.message });
@@ -41,9 +54,9 @@ class AIService {
     }
   }
 
-  async extractGymRecords(base64Image) {
+  async extractGymRecords(base64Image, options = {}) {
     if (!base64Image || base64Image.length < 500) {
-      logger.warn('AI Extraction Aborted: Image data too short or missing');
+      logger.warn('AI Extraction Aborted: Image data too short');
       throw new Error('IMAGE_DATA_TOO_SHORT');
     }
 
@@ -52,72 +65,135 @@ class AIService {
     try {
       const cleanedBase64 = base64Image
         .trim()
-        .replace(/^['"]|['"]$/g, '')
         .replace(/^data:image\/\w+;base64,/, '')
-        .replace(/[\n\r\t]/g, '')
         .replace(/\s/g, '');
 
-      const tokenResponse = await this.jwtClient.authorize();
-      const accessToken = tokenResponse.access_token;
+      const prompt = options.text || 'Extract gym attendance ledger data from this image. Return ONLY a JSON array with: name, phone, amount, status (paid/unpaid). If no names are found, return [].';
+      const mimeType = options.mimeType || 'image/jpeg';
 
-      const url = `https://${this._location}-aiplatform.googleapis.com/v1/projects/${this._projectNumber}/locations/${this._location}/publishers/google/models/${this._model}:generateContent`;
-
-      const response = await axios.post(url, {
+      // Corrected SDK Syntax for Vertex mode
+      const response = await this._ai.models.generateContent({
+        model: this._modelId,
         contents: [
           {
             role: 'user',
             parts: [
-              { text: 'Extract gym attendance ledger data from this image. Return ONLY a JSON array with: name, phone, amount, status (paid/unpaid). If no names are found, return [].' },
-              { inline_data: { data: cleanedBase64, mime_type: 'image/jpeg' } },
+              { text: prompt },
+              { inlineData: { data: cleanedBase64, mimeType: mimeType } },
             ],
           },
         ],
-      }, {
-        headers: {
-          'Authorization': `Bearer ${accessToken}`,
-          'Content-Type': 'application/json'
-        },
-        timeout: 30000
       });
 
-      const rawText = response.data.candidates?.[0]?.content?.parts?.[0]?.text || '[]';
+      const rawText = response.text ?? '';
       const cleanJson = rawText.replace(/```json|```/g, '').trim();
       
       try {
         const parsed = JSON.parse(cleanJson);
-        logger.info('AI Extraction Successful', { count: parsed.length });
+        logger.info('AI Ledger Extraction Successful', { count: parsed.length });
         return parsed;
       } catch (parseError) {
-        logger.error('AI Response Parsing Failed', { raw: rawText.substring(0, 100) });
+        logger.error('AI Ledger Parsing Failed', { raw: rawText.substring(0, 100) });
         return [];
       }
     } catch (error) {
-      const status = error.response?.status;
-      const data = error.response?.data;
-      logger.error('AI Vertex Request Failed', { status, data: JSON.stringify(data) });
+      logger.error('AI Ledger SDK Failed', { error: error.message });
       throw new Error('AI_GATEWAY_TIMEOUT');
+    }
+  }
+
+  async extractWorkoutLog(imageBase64, mimeType = 'image/jpeg') {
+    if (!imageBase64 || imageBase64.length < 500) {
+      throw new Error('IMAGE_DATA_TOO_SHORT');
+    }
+
+    await this.init();
+
+    const cleanedBase64 = imageBase64
+      .trim()
+      .replace(/^data:image\/\w+;base64,/, '')
+      .replace(/\s/g, '');
+
+    try {
+      const response = await this._ai.models.generateContent({
+        model: this._modelId,
+        contents: [{
+          role: 'user',
+          parts: [
+            {
+              inlineData: {
+                mimeType: mimeType,
+                data: cleanedBase64
+              }
+            },
+            {
+              text: `Extract all workout entries from this gym logbook photo. 
+              Return ONLY a valid JSON array, no extra text, no markdown.
+              Each entry should have:
+              {
+                "date": "string or null",
+                "exercise": "string",
+                "sets": number or null,
+                "reps": number or null,
+                "weight_kg": number or null,
+                "notes": "string or null"
+              }`
+            }
+          ]
+        }]
+      });
+
+      const raw = response.text ?? '';
+      
+      try {
+        const cleaned = raw.replace(/```json|```/g, '').trim();
+        const entries = JSON.parse(cleaned);
+        logger.info('Workout Log Extraction Successful', { count: entries.length });
+        return { success: true, entries };
+      } catch (parseError) {
+        logger.error('Workout Log Parsing Failed');
+        return { success: false, error: "PARSE_FAILED", raw };
+      }
+    } catch (error) {
+      logger.error('Workout Log SDK Failed', { error: error.message });
+      throw new Error('AI_EXTRACT_FAILED');
     }
   }
 
   async ping() {
     await this.init();
     try {
-      const tokenResponse = await this.jwtClient.authorize();
-      const accessToken = tokenResponse.access_token;
-      const url = `https://${this._location}-aiplatform.googleapis.com/v1/projects/${this._projectNumber}/locations/${this._location}/publishers/google/models/${this._model}:generateContent`;
-
-      const response = await axios.post(url, {
-        contents: [{ role: 'user', parts: [{ text: 'Respond with exactly: ALIVE' }] }]
-      }, {
-        headers: { 'Authorization': `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
-        timeout: 10000
+      const response = await this._ai.models.generateContent({
+        model: this._modelId,
+        contents: [{ role: 'user', parts: [{ text: 'ping' }] }]
       });
 
-      return response.data.candidates[0].content.parts[0].text.trim();
+      // Handle both standard and direct response structures
+      const rawText = response.text ?? '';
+
+      return rawText.trim();
     } catch (error) {
-      logger.error('AI Ping Failed', { error: error.message });
+      logger.error('AI Ping Failed', { 
+        error: error.message,
+        stack: error.stack
+      });
       throw new Error('AI_OFFLINE');
     }
+  }
+
+  async chat(contents, systemInstruction) {
+    const self = this;
+    await self.init();
+    console.log('[CHAT] _ai after init:', self._ai === null ? 'NULL' : 'OK');
+    if (!self._ai) throw new Error('AI_STATIC_INITIALIZATION_ERROR_NULL_INSTANCE');
+    const response = await self._ai.models.generateContent({
+      model: self._modelId,
+      contents,
+      config: {
+        systemInstruction: systemInstruction || ''
+      }
+    });
+    return response.text ?? '';
   }
 }
 

@@ -15,6 +15,17 @@ class MemberStats {
     required this.planBadge,
   });
 
+  factory MemberStats.empty() {
+    return MemberStats(
+      joinDate: 'N/A',
+      totalVisits: 0,
+      lifetimeValue: 0.0,
+      status: 'unknown',
+      lastArrival: null,
+      planBadge: 'No Data',
+    );
+  }
+
   factory MemberStats.fromJson(Map<String, dynamic> json) {
     String fmt(dynamic v) {
       if (v == null) return 'N/A';
