@@ -9,9 +9,8 @@ dayjs.extend(utc);
 
 // Calculate expiry date based on membership type duration
 const calculateExpiryDate = (joinDate, durationMonths) => {
-  const expiry = new Date(joinDate);
-  expiry.setMonth(expiry.getMonth() + durationMonths);
-  return expiry.toISOString().split('T')[0];
+  // BUG 1 & 3 FIX: Use dayjs.utc() for addition to avoid setMonth edge cases
+  return dayjs.utc(joinDate).add(durationMonths, 'month').toDate();
 };
 
 // Validate email format
@@ -24,9 +23,9 @@ const validateEmail = (email) => {
 // Check if membership is expiring within 30 days (ERPNext renewal logic)
 const isExpiringWithin30Days = (expiryDate) => {
   if (!expiryDate) return true;
-  const today = new Date();
-  const expiry = new Date(expiryDate);
-  const diffDays = Math.ceil((expiry - today) / (1000 * 60 * 60 * 24));
+  const today = dayjs.utc(); // BUG 1 FIX: Use UTC
+  const expiry = dayjs.utc(expiryDate); // BUG 1 FIX: Use UTC
+  const diffDays = Math.ceil(expiry.diff(today, 'day', true));
   return diffDays <= 30;
 };
 
@@ -55,12 +54,12 @@ const memberService = {
     if (membership_type_id && !is_trial) {
       const membershipType = await MembershipType.findByPk(membership_type_id);
       if (!membershipType) throw new Error('Invalid membership type');
-      expiry_date = calculateExpiryDate(new Date(), membershipType.duration_months);
+      expiry_date = calculateExpiryDate(dayjs.utc().toDate(), membershipType.duration_months); // BUG 1 FIX
     }
 
     // If trial, set 30 day expiry by default (1 month)
     if (is_trial) {
-      expiry_date = calculateExpiryDate(new Date(), 1);
+      expiry_date = calculateExpiryDate(dayjs.utc().toDate(), 1); // BUG 1 FIX
     }
 
     const member = await Member.create({
@@ -70,7 +69,7 @@ const memberService = {
       email,
       avatar,
       membership_type_id: is_trial ? null : membership_type_id,
-      join_date: new Date(),
+      join_date: dayjs.utc().toDate(), // BUG 1 FIX
       expiry_date,
       status: is_trial ? 'trial' : 'active',
       is_trial,
@@ -257,13 +256,18 @@ const memberService = {
   },
 
   // Get all membership types
-  getMembershipTypes: async () => {
-    return await MembershipType.findAll({ order: [['amount', 'ASC']] });
+  getMembershipTypes: async (gymId) => {
+    // BUG 5 FIX: Added gymId parameter and where clause for isolation
+    return await MembershipType.findAll({ 
+      where: { gym_id: gymId },
+      order: [['amount', 'ASC']] 
+    });
   },
 
   // Auto-expire members whose expiry date has passed (run as a cron job)
   autoExpireMembers: async () => {
-    const today = new Date().toISOString().split('T')[0];
+    // BUG 1 FIX: Use dayjs.utc()
+    const today = dayjs.utc().format('YYYY-MM-DD');
     const updated = await Member.update(
       { status: 'expired' },
       {

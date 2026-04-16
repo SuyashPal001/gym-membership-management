@@ -3,10 +3,20 @@ const sequelize = require('../config/database');
 
 const MembershipType = sequelize.define('MembershipType', {
   id: { type: DataTypes.UUID, defaultValue: DataTypes.UUIDV4, primaryKey: true },
-  name: { type: DataTypes.STRING, allowNull: false, unique: true },
+  gym_id: { type: DataTypes.UUID, allowNull: false }, // BUG 2 FIX: Added gym_id for multi-tenancy
+  name: { type: DataTypes.STRING, allowNull: false }, // BUG 2 FIX: Removed global unique
   amount: { type: DataTypes.FLOAT, allowNull: false },
   duration_months: { type: DataTypes.INTEGER, allowNull: false, defaultValue: 1 },
-}, { tableName: 'membership_types', timestamps: true });
+}, { 
+  tableName: 'membership_types', 
+  timestamps: true,
+  indexes: [
+    {
+      unique: true,
+      fields: ['name', 'gym_id'] // BUG 2 FIX: Each gym can have its own plan names
+    }
+  ]
+});
 
 const Member = sequelize.define('Member', {
   id: { type: DataTypes.UUID, defaultValue: DataTypes.UUIDV4, primaryKey: true },

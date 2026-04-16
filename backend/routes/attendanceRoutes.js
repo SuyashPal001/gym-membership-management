@@ -54,7 +54,7 @@ router.post('/scan', async (req, res) => {
       const checkOutTime = dayjs.utc().toDate();
       await existingSession.update({ check_out_time: checkOutTime });
       
-      const duration_minutes = dayjs(checkOutTime).diff(existingSession.check_in_time, 'minute');
+      const duration_minutes = dayjs.utc(checkOutTime).diff(dayjs.utc(existingSession.check_in_time), 'minute');
 
       return res.json({ 
         success: true, 
@@ -97,7 +97,7 @@ router.get('/today', async (req, res) => {
     sessions.forEach(session => {
       const sessionData = session.toJSON();
       if (session.check_out_time) {
-        sessionData.duration_minutes = dayjs(session.check_out_time).diff(session.check_in_time, 'minute');
+        sessionData.duration_minutes = dayjs.utc(session.check_out_time).diff(dayjs.utc(session.check_in_time), 'minute');
         checked_out.push(sessionData);
       } else {
         currently_in.push(sessionData);
