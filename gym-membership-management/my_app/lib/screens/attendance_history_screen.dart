@@ -54,23 +54,17 @@ class _AttendanceHistoryScreenState extends State<AttendanceHistoryScreen> {
     return Scaffold(
       backgroundColor: AppColors.background,
       appBar: AppBar(
-        title: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              "${widget.memberName}'s Attendance",
-              style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: AppColors.primaryText),
-            ),
-            if (!_isLoading && _error == null)
-              Text(
-                "${_sessions.length} sessions total",
-                style: const TextStyle(fontSize: 13, color: AppColors.secondaryText, fontWeight: FontWeight.normal),
-              ),
-          ],
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back_ios, color: Colors.white, size: 18),
+          onPressed: () => Navigator.of(context).pop(),
         ),
-        backgroundColor: AppColors.background,
         elevation: 0,
-        iconTheme: const IconThemeData(color: AppColors.primaryText),
+        backgroundColor: Colors.transparent,
+        title: Text(
+          "${widget.memberName.toUpperCase()}'S ATTENDANCE",
+          style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w900, letterSpacing: 1.5, color: Colors.white),
+        ),
+        centerTitle: true,
       ),
       body: _isLoading
           ? const Center(child: CircularProgressIndicator(color: AppColors.accent))
@@ -129,68 +123,89 @@ class _AttendanceHistoryScreenState extends State<AttendanceHistoryScreen> {
       decoration: BoxDecoration(
         color: AppColors.cardBackground,
         borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppColors.border.withOpacity(0.5)),
       ),
-      padding: const EdgeInsets.all(12),
+      padding: const EdgeInsets.all(16),
       child: Row(
         children: [
           // Date Badge
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
             decoration: BoxDecoration(
-              color: AppColors.accent,
-              borderRadius: BorderRadius.circular(8),
+              color: AppColors.primaryBlue.withOpacity(0.1),
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: AppColors.primaryBlue.withOpacity(0.2)),
             ),
             child: Column(
               children: [
                 Text(
                   dateMonth.toUpperCase(),
-                  style: const TextStyle(color: AppColors.background, fontSize: 10, fontWeight: FontWeight.bold),
+                  style: const TextStyle(color: AppColors.primaryBlue, fontSize: 10, fontWeight: FontWeight.w900, letterSpacing: 0.5),
                 ),
                 Text(
                   dateDay,
-                  style: const TextStyle(color: AppColors.background, fontSize: 16, fontWeight: FontWeight.w900),
+                  style: const TextStyle(color: AppColors.primaryBlue, fontSize: 18, fontWeight: FontWeight.w900),
                 ),
               ],
             ),
           ),
-          const SizedBox(width: 16),
+          const SizedBox(width: 20),
 
           // Times
           Expanded(
-            child: Row(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  checkInStr,
-                  style: const TextStyle(color: AppColors.primaryText, fontSize: 14, fontWeight: FontWeight.w500),
+                Row(
+                  children: [
+                    Text(
+                      checkInStr,
+                      style: const TextStyle(color: AppColors.primaryText, fontSize: 15, fontWeight: FontWeight.w800),
+                    ),
+                    const Padding(
+                      padding: EdgeInsets.symmetric(horizontal: 10.0),
+                      child: Icon(Icons.arrow_forward_rounded, size: 14, color: AppColors.secondaryText),
+                    ),
+                    Text(
+                      checkOutStr,
+                      style: TextStyle(
+                        color: session.checkOutTime == null ? AppColors.primaryBlue : AppColors.primaryText,
+                        fontSize: 15,
+                        fontWeight: session.checkOutTime == null ? FontWeight.w900 : FontWeight.w800,
+                      ),
+                    ),
+                  ],
                 ),
-                const Padding(
-                  padding: EdgeInsets.symmetric(horizontal: 8.0),
-                  child: Icon(Icons.arrow_forward, size: 14, color: AppColors.secondaryText),
-                ),
-                Text(
-                  checkOutStr,
-                  style: TextStyle(
-                    color: session.checkOutTime == null ? AppColors.accent : AppColors.primaryText,
-                    fontSize: 14,
-                    fontWeight: session.checkOutTime == null ? FontWeight.bold : FontWeight.w500,
+                if (session.checkOutTime == null)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 4.0),
+                    child: Text("SESSION IN PROGRESS", style: TextStyle(color: AppColors.primaryBlue, fontSize: 9, fontWeight: FontWeight.w900, letterSpacing: 0.5)),
                   ),
-                ),
               ],
             ),
           ),
 
           // Duration Pill
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-            decoration: BoxDecoration(
-              color: AppColors.border,
-              borderRadius: BorderRadius.circular(20),
+          if (session.checkOutTime != null)
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+              decoration: BoxDecoration(
+                color: Colors.white.withOpacity(0.04),
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(color: Colors.white.withOpacity(0.1)),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.timer_outlined, size: 12, color: AppColors.secondaryText),
+                  SizedBox(width: 4),
+                  Text(
+                    durationStr == '--' ? '...' : durationStr,
+                    style: const TextStyle(color: AppColors.secondaryText, fontSize: 11, fontWeight: FontWeight.w900),
+                  ),
+                ],
+              ),
             ),
-            child: Text(
-              durationStr,
-              style: const TextStyle(color: AppColors.secondaryText, fontSize: 12, fontWeight: FontWeight.w600),
-            ),
-          ),
         ],
       ),
     );

@@ -8,6 +8,7 @@ const { Member, MembershipType, WorkflowReminder, Call, AttendanceSession, Payme
 const LedgerScan = require('./LedgerScan')(sequelize, Sequelize.DataTypes);
 const VoiceSession = require('./VoiceSession')(sequelize, Sequelize.DataTypes);
 const Gym = require('./Gym')(sequelize, Sequelize.DataTypes);
+const { Staff, StaffAttendance, StaffSalary } = require('./Staff');
 
 const db = {
   Member,
@@ -19,6 +20,9 @@ const db = {
   LedgerScan,
   VoiceSession,
   Gym,
+  Staff,
+  StaffAttendance,
+  StaffSalary,
   sequelize,
   Sequelize
 };

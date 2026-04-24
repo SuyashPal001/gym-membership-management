@@ -25,20 +25,14 @@ class AuthService {
     if (!kIsWeb) return false;
     final uri = Uri.base;
     
-    debugPrint('CALLBACK_URI: $uri');
-    debugPrint('CALLBACK_PATH: ${uri.path}');
-    
     final code = uri.queryParameters['code'];
-    debugPrint('CALLBACK_CODE: $code');
-    
+
     if (code == null) {
-      debugPrint('CALLBACK: No code found — not a callback');
       return false;
     }
 
     final prefs = await SharedPreferences.getInstance();
     final verifier = prefs.getString(_verifierKey);
-    debugPrint('CALLBACK_VERIFIER_EXISTS: ${verifier != null}');
 
     if (verifier == null) {
       debugPrint('AuthService: PKCE verifier missing — possible page refresh during auth');
@@ -47,12 +41,9 @@ class AuthService {
       return false;
     }
 
-    // Rebuild the exact redirect_uri that was sent in the auth request
     final redirectUri = _getWebRedirectUri();
-    print('AuthService: Exchanging code with redirect_uri: $redirectUri');
 
     final token = await _exchangeCodeForToken(code, verifier, redirectUri: redirectUri);
-    debugPrint('CALLBACK_TOKEN_RECEIVED: ${token != null}');
     await prefs.remove(_verifierKey);
 
     return token != null;
@@ -103,7 +94,6 @@ class AuthService {
   /// Launches the Cognito Hosted UI with PKCE and handles the code exchange.
   static Future<String?> signInWithGoogle() async {
 
-    debugPrint('AuthService: signInWithGoogle called');
     final completer = Completer<String?>();
 
     try {
@@ -131,12 +121,9 @@ class AuthService {
           'code_challenge_method=S256&'
           'prompt=select_account';
 
-      print('AuthService: LAUNCH URL: $urlString');
-
       final authUrl = Uri.parse(urlString);
 
       if (kIsWeb) {
-        debugPrint('GYMOPS_LAUNCH_URL: $urlString');
         
         return await WebPopupManager.instance.openAuthPopup(
           url: urlString,
@@ -159,7 +146,6 @@ class AuthService {
       // 4. Mobile: Setup deep link listener then launch browser
       _linkSubscription?.cancel();
       _linkSubscription = _appLinks.uriLinkStream.listen((uri) async {
-        print('AuthService: Received deep link: $uri');
         if (uri.scheme == 'myapp' && uri.host == 'callback') {
           final code = uri.queryParameters['code'];
           final savedVerifier = (await SharedPreferences.getInstance()).getString(_verifierKey);
@@ -175,13 +161,10 @@ class AuthService {
           (await SharedPreferences.getInstance()).remove(_verifierKey);
         }
       }, onError: (err) {
-        print('AuthService: Deep link error: $err');
         completer.completeError(err);
       });
 
       if (await canLaunchUrl(authUrl)) {
-        print('AuthService: Launching URL for mobile...');
-        debugPrint('GYMOPS_LAUNCH_URL: $urlString');
         await launchUrl(
           authUrl,
           mode: LaunchMode.externalApplication,
@@ -198,7 +181,6 @@ class AuthService {
         },
       );
     } catch (e) {
-      print('AuthService: Critical error in signInWithGoogle: $e');
       _linkSubscription?.cancel();
       rethrow;
     }
@@ -218,8 +200,6 @@ class AuthService {
       final tokenUri = Uri.https(domain, '/oauth2/token');
       final effectiveRedirectUri = redirectUri ?? 'myapp://callback';
 
-      print('AuthService: POSTing to $tokenUri with redirect_uri=$effectiveRedirectUri');
-
       final response = await http.post(
         tokenUri,
         headers: {'Content-Type': 'application/x-www-form-urlencoded'},
@@ -233,8 +213,6 @@ class AuthService {
         },
       );
 
-      print('AuthService: Token exchange response: ${response.statusCode}');
-
       if (response.statusCode == 200) {
         final data = json.decode(response.body);
         final idToken = data['id_token'];
@@ -242,25 +220,15 @@ class AuthService {
         final refreshToken = data['refresh_token'];
 
         final prefs = await SharedPreferences.getInstance();
-        if (idToken != null) await prefs.setString('id_token', idToken);
-        if (accessToken != null) await prefs.setString('jwt_token', accessToken);
+        if (idToken != null) await prefs.setString('jwt_token', idToken);
+        if (accessToken != null) await prefs.setString('access_token', accessToken);
         if (refreshToken != null) await prefs.setString('refresh_token', refreshToken);
 
-        // ── DEBUG (remove after confirming) ───────────────────────────────
-        print('DEBUG access_token stored: ${accessToken != null}');
-        print('DEBUG id_token stored: ${idToken != null}');
-        final stored = prefs.getString('jwt_token');
-        print('DEBUG jwt_token starts with: ${stored?.substring(0, 20)}');
-        // ─────────────────────────────────────────────────────────────────
-
-        print('AuthService: Token stored successfully.');
-        return accessToken;
+        return idToken;
       } else {
-        print('AuthService: Token exchange failed: ${response.statusCode} — ${response.body}');
         return null;
       }
     } catch (e) {
-      print('AuthService: Exchange error: $e');
       return null;
     }
   }
@@ -319,10 +287,10 @@ class AuthService {
         final data = json.decode(response.body);
         final newIdToken = data['id_token'];
         final newAccessToken = data['access_token'];
-        if (newIdToken != null) await prefs.setString('id_token', newIdToken);
-        if (newAccessToken != null) {
-          await prefs.setString('jwt_token', newAccessToken);
-          return newAccessToken;
+        if (newAccessToken != null) await prefs.setString('access_token', newAccessToken);
+        if (newIdToken != null) {
+          await prefs.setString('jwt_token', newIdToken);
+          return newIdToken;
         }
       }
       return null;
@@ -353,7 +321,7 @@ class AuthService {
       }
       final prefs = await SharedPreferences.getInstance();
       await prefs.remove('jwt_token');
-      await prefs.remove('id_token');
+      await prefs.remove('access_token');
       await prefs.remove('refresh_token');
       await prefs.remove('gym_id');
       await prefs.remove(_verifierKey);

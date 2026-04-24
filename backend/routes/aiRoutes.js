@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const aiService = require('../services/aiService');
-const { Member, LedgerScan, AttendanceSession, Payment, sequelize } = require('../models');
+const { Member, MembershipType, LedgerScan, AttendanceSession, Payment, sequelize } = require('../models');
 const { Op } = require('sequelize');
 const dayjs = require('dayjs');
 const Fuse = require('fuse.js');
@@ -122,21 +122,65 @@ router.post('/scan/:scan_id/confirm', async (req, res) => {
     const skipped_reasons = [];
 
     for (const entry of entries) {
-      if (entry.action === 'skip' || !entry.selected_member_id) {
+      if (entry.action === 'skip') {
         skipped++;
         skipped_reasons.push(`${entry.ai_read_name} — skipped by owner`);
         continue;
       }
 
-      const member = await Member.findOne({
-        where: { id: entry.selected_member_id, gym_id: req.gymId },
-        transaction: t
-      });
+      let member;
 
-      if (!member) {
-        skipped++;
-        skipped_reasons.push(`${entry.ai_read_name} — member not found in dataset`);
-        continue;
+      if (entry.action === 'new_member') {
+        const rawPhone = (entry.phone || '').replace(/\D/g, '');
+        if (!rawPhone) {
+          skipped++;
+          skipped_reasons.push(`${entry.ai_read_name} — phone number required for new member`);
+          continue;
+        }
+        const phone = rawPhone.startsWith('91') && rawPhone.length === 12
+          ? `+${rawPhone}`
+          : `+91${rawPhone.slice(-10)}`;
+
+        let expiry_date = null;
+        let membershipTypeId = entry.membership_type_id || null;
+
+        if (entry.is_trial) {
+          expiry_date = dayjs.utc().add(30, 'day').toDate();
+          membershipTypeId = null;
+        } else if (membershipTypeId) {
+          const plan = await MembershipType.findOne({ where: { id: membershipTypeId, gym_id: req.gymId }, transaction: t });
+          if (plan) expiry_date = dayjs.utc().add(plan.duration_months, 'month').toDate();
+          else membershipTypeId = null;
+        }
+
+        member = await Member.create({
+          gym_id: req.gymId,
+          member_name: entry.ai_read_name,
+          phone,
+          status: entry.is_trial ? 'trial' : 'active',
+          is_trial: entry.is_trial || false,
+          membership_type_id: membershipTypeId,
+          join_date: dayjs.utc().format('YYYY-MM-DD'),
+          expiry_date,
+          payment_collected: false,
+          total_visits: 0,
+          lifetime_value: 0,
+        }, { transaction: t });
+      } else {
+        if (!entry.selected_member_id) {
+          skipped++;
+          skipped_reasons.push(`${entry.ai_read_name} — no member linked`);
+          continue;
+        }
+        member = await Member.findOne({
+          where: { id: entry.selected_member_id, gym_id: req.gymId },
+          transaction: t
+        });
+        if (!member) {
+          skipped++;
+          skipped_reasons.push(`${entry.ai_read_name} — member not found`);
+          continue;
+        }
       }
 
       if (entry.attended) {
@@ -231,18 +275,6 @@ router.get('/scans', async (req, res) => {
     res.json({ success: true, data: scans });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
-  }
-});
-
-// POST /api/ai/extract-logbook
-router.post('/extract-logbook', scanRateLimiter, async (req, res) => {
-  try {
-    const { imageBase64, mimeType } = req.body;
-    if (!imageBase64) return res.status(400).json({ success: false, error: 'MISSING_IMAGE' });
-    const result = await aiService.extractWorkoutLog(imageBase64, mimeType || 'image/jpeg');
-    res.status(200).json(result);
-  } catch (error) {
-    res.status(500).json({ success: false, error: error.message });
   }
 });
 

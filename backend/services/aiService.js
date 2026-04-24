@@ -38,11 +38,6 @@ class AIService {
         googleAuthOptions: { credentials }
       });
 
-      console.log('AI object initialized:', this._ai);
-      console.log('Models defined:', !!this._ai?.models);
-      console.log('_ai is null?', this._ai === null);
-      console.log('_ai type:', typeof this._ai);
-
       this.isInitialized = true;
       logger.info('Sovereign AI Service Initialized (@google/genai SDK)', { 
         project: projectId, 
@@ -102,64 +97,6 @@ class AIService {
     }
   }
 
-  async extractWorkoutLog(imageBase64, mimeType = 'image/jpeg') {
-    if (!imageBase64 || imageBase64.length < 500) {
-      throw new Error('IMAGE_DATA_TOO_SHORT');
-    }
-
-    await this.init();
-
-    const cleanedBase64 = imageBase64
-      .trim()
-      .replace(/^data:image\/\w+;base64,/, '')
-      .replace(/\s/g, '');
-
-    try {
-      const response = await this._ai.models.generateContent({
-        model: this._modelId,
-        contents: [{
-          role: 'user',
-          parts: [
-            {
-              inlineData: {
-                mimeType: mimeType,
-                data: cleanedBase64
-              }
-            },
-            {
-              text: `Extract all workout entries from this gym logbook photo. 
-              Return ONLY a valid JSON array, no extra text, no markdown.
-              Each entry should have:
-              {
-                "date": "string or null",
-                "exercise": "string",
-                "sets": number or null,
-                "reps": number or null,
-                "weight_kg": number or null,
-                "notes": "string or null"
-              }`
-            }
-          ]
-        }]
-      });
-
-      const raw = response.text ?? '';
-      
-      try {
-        const cleaned = raw.replace(/```json|```/g, '').trim();
-        const entries = JSON.parse(cleaned);
-        logger.info('Workout Log Extraction Successful', { count: entries.length });
-        return { success: true, entries };
-      } catch (parseError) {
-        logger.error('Workout Log Parsing Failed');
-        return { success: false, error: "PARSE_FAILED", raw };
-      }
-    } catch (error) {
-      logger.error('Workout Log SDK Failed', { error: error.message });
-      throw new Error('AI_EXTRACT_FAILED');
-    }
-  }
-
   async ping() {
     await this.init();
     try {
@@ -184,7 +121,6 @@ class AIService {
   async chat(contents, systemInstruction) {
     const self = this;
     await self.init();
-    console.log('[CHAT] _ai after init:', self._ai === null ? 'NULL' : 'OK');
     if (!self._ai) throw new Error('AI_STATIC_INITIALIZATION_ERROR_NULL_INSTANCE');
     const response = await self._ai.models.generateContent({
       model: self._modelId,

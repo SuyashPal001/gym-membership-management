@@ -2,12 +2,21 @@ const express = require('express');
 const router = express.Router();
 const memberService = require('../services/memberService');
 
-// GET /api/payments (formerly /api/payments/:gym_id)
-// Uses req.gymId from resolveGymId middleware
+// GET /api/payments/stats — Total collected this calendar month from Payment table
+router.get('/stats', async (req, res) => {
+  try {
+    const stats = await memberService.getMonthlyStats(req.gymId);
+    res.json({ success: true, data: stats });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// GET /api/payments
 router.get('/', async (req, res) => {
   try {
-    const { expiry_filter } = req.query;
-    
+    const { expiry_filter, paid } = req.query;
+
     if (expiry_filter) {
       const validFilters = ['today', 'this_week', 'overdue'];
       if (!validFilters.includes(expiry_filter)) {
@@ -15,7 +24,8 @@ router.get('/', async (req, res) => {
       }
     }
 
-    const members = await memberService.getPaymentSummaries(req.gymId, expiry_filter);
+    const isPaid = paid === 'true';
+    const members = await memberService.getPaymentSummaries(req.gymId, expiry_filter, isPaid);
     res.json({ success: true, data: members });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });

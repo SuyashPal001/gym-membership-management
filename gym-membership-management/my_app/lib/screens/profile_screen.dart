@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:google_fonts/google_fonts.dart';
 import '../constants/app_colors.dart';
 import '../services/api_service.dart';
 import '../services/api_exception.dart';
@@ -20,12 +22,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
   final _cityController       = TextEditingController();
   final _stateController      = TextEditingController();
 
-  bool    _isLoading    = true;
-  bool    _isSaving     = false;
-  String? _editingField; // 'studio_name' | 'owner_name' | 'city' | 'state' | null
-  String  _originalValue = '';
-
-  // ─── Lifecycle ─────────────────────────────────────────────────────────────
+  bool _isLoading = true;
+  bool _isSaving = false;
+  String? _editingField; 
+  String _originalValue = '';
 
   @override
   void initState() {
@@ -42,8 +42,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
     _stateController.dispose();
     super.dispose();
   }
-
-  // ─── Data ──────────────────────────────────────────────────────────────────
 
   Future<void> _loadProfile() async {
     setState(() => _isLoading = true);
@@ -66,7 +64,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
     final owner  = _ownerNameController.text.trim();
 
     if (studio.isEmpty || owner.isEmpty) {
-      _snack('Studio name and owner name are required', error: true);
+      _snack('Information required', error: true);
       return;
     }
 
@@ -84,17 +82,15 @@ class _ProfileScreenState extends State<ProfileScreen> {
         _editingField = null;
         _isSaving     = false;
       });
-      _snack('${_humanize(fieldId)} updated');
+      _snack('${_humanize(fieldId)} Updated Successfully');
     } on ApiException catch (e) {
       _snack(e.message, error: true);
       setState(() => _isSaving = false);
     } catch (_) {
-      _snack('An unexpected error occurred', error: true);
+      _snack('Unexpected Error', error: true);
       setState(() => _isSaving = false);
     }
   }
-
-  // ─── Helpers ───────────────────────────────────────────────────────────────
 
   String _humanize(String fieldId) => fieldId
       .split('_')
@@ -103,13 +99,57 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
   void _snack(String msg, {bool error = false}) {
     if (!mounted) return;
+    ScaffoldMessenger.of(context).clearSnackBars();
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-      content: Text(msg),
-      backgroundColor: error ? Colors.redAccent : AppColors.accent,
+      behavior: SnackBarBehavior.floating,
+      margin: EdgeInsets.fromLTRB(24, 0, 24, MediaQuery.of(context).padding.bottom + 24),
+      backgroundColor: Colors.transparent,
+      elevation: 0,
+      content: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        decoration: BoxDecoration(
+          color: const Color(0xFF1A1A1A).withOpacity(0.95),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(
+            color: error ? AppColors.error.withOpacity(0.3) : AppColors.emerald.withOpacity(0.3),
+            width: 1,
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.3),
+              blurRadius: 20,
+              offset: const Offset(0, 10),
+            ),
+          ],
+        ),
+        child: Row(
+          children: [
+            Icon(
+              error ? Icons.error_outline_rounded : Icons.check_circle_outline_rounded,
+              color: error ? AppColors.error : AppColors.emerald,
+              size: 20,
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                msg,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 14,
+                  fontWeight: FontWeight.w500,
+                  letterSpacing: 0.2,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+      duration: const Duration(seconds: 2),
     ));
   }
 
   void _startEditing(String fieldId, TextEditingController ctrl) {
+    HapticFeedback.mediumImpact();
     setState(() {
       _editingField  = fieldId;
       _originalValue = ctrl.text;
@@ -123,258 +163,446 @@ class _ProfileScreenState extends State<ProfileScreen> {
     });
   }
 
-  // ─── Build ─────────────────────────────────────────────────────────────────
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: AppColors.background,
-      appBar: AppBar(
-        backgroundColor: Colors.transparent,
-        elevation: 0,
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back_ios, size: 18, color: Colors.white),
-          onPressed: widget.onBack,
-        ),
-        title: const Text(
-          'Profile',
-          style: TextStyle(
-            fontSize:   22,
-            fontWeight: FontWeight.bold,
-            color:      AppColors.primaryText,
+      body: Stack(
+        children: [
+          // 1. ATMOSPHERIC BACKGROUND
+          Positioned(
+            top: -100, right: -50,
+            child: Container(
+              width: 300, height: 300,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: AppColors.primaryBlue.withOpacity(0.05),
+              ),
+            ),
           ),
-        ),
-      ),
-      body: _isLoading
-          ? const Center(child: CircularProgressIndicator(color: AppColors.accent))
-          : SingleChildScrollView(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  // FIX 1 & 2: Dynamic Avatar and no text below
-                  const SizedBox(height: 32),
-                  _buildAvatarOnly(),
-                  const SizedBox(height: 24), // 24px gap between avatar and first field row
-
-                  // 3. FIELD ROWS (BOX STYLE)
-                  _buildFieldRow(
-                    label:       'STUDIO NAME',
-                    controller:  _studioNameController,
-                    fieldId:     'studio_name',
-                    hint:        'Enter studio name',
-                  ),
-                  _buildFieldRow(
-                    label:       'OWNER NAME',
-                    controller:  _ownerNameController,
-                    fieldId:     'owner_name',
-                    hint:        'Enter your name',
-                  ),
-                  _buildContactRow(),
-                  _buildFieldRow(
-                    label:       'CITY',
-                    controller:  _cityController,
-                    fieldId:     'city',
-                    hint:        'Enter city',
-                  ),
-                  _buildFieldRow(
-                    label:       'STATE',
-                    controller:  _stateController,
-                    fieldId:     'state',
-                    hint:        'Enter state',
-                  ),
-
-                  // 4. VERSION TEXT
-                  Padding(
-                    padding: const EdgeInsets.only(top: 40, bottom: 24),
-                    child: Center(
-                      child: Text(
-                        'Gym-Ops v1.0',
-                        style: TextStyle(
-                          fontSize: 12,
-                          color:    AppColors.secondaryText.withOpacity(0.3),
+          _isLoading
+              ? const Center(child: CircularProgressIndicator(color: AppColors.primaryBlue))
+              : CustomScrollView(
+                  physics: const BouncingScrollPhysics(),
+                  slivers: [
+                    _buildAppBar(),
+                    SliverToBoxAdapter(
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 24),
+                        child: Column(
+                          children: [
+                            const SizedBox(height: 20),
+                            _buildNeuralHeader(),
+                            const SizedBox(height: 48),
+                            _buildModuleHeader('IDENTITY'),
+                            _buildModuleCard([
+                              _buildInteractiveRow(
+                                title: 'STUDIO NAME',
+                                controller: _studioNameController,
+                                fieldId: 'studio_name',
+                                icon: Icons.auto_awesome_mosaic_rounded,
+                              ),
+                              _buildInteractiveRow(
+                                title: 'OWNER NAME',
+                                controller: _ownerNameController,
+                                fieldId: 'owner_name',
+                                icon: Icons.verified_user_rounded,
+                                isLast: true,
+                              ),
+                            ]),
+                            const SizedBox(height: 32),
+                            _buildModuleHeader('CONTACT & LOCATION'),
+                            _buildModuleCard([
+                              _buildReadOnlyRow(
+                                title: 'PRIMARY CONTACT',
+                                value: _phoneController.text,
+                                icon: Icons.phone_iphone_rounded,
+                              ),
+                              _buildInteractiveRow(
+                                title: 'LOCATION CITY',
+                                controller: _cityController,
+                                fieldId: 'city',
+                                icon: Icons.location_on_rounded,
+                              ),
+                              _buildInteractiveRow(
+                                title: 'STATE / PROVINCE',
+                                controller: _stateController,
+                                fieldId: 'state',
+                                icon: Icons.map_rounded,
+                                isLast: true,
+                              ),
+                            ]),
+                            const SizedBox(height: 60),
+                            _buildFooter(),
+                            const SizedBox(height: 40),
+                          ],
                         ),
                       ),
                     ),
-                  ),
-                ],
-              ),
-            ),
-    );
-  }
-
-  Widget _buildAvatarOnly() {
-    final gymName = _studioNameController.text.trim();
-
-    return Center(
-      child: Container(
-        width:  72,
-        height: 72,
-        decoration: BoxDecoration(
-          color:        const Color(0xFF1A2E1A),
-          borderRadius: BorderRadius.circular(16),
-        ),
-        alignment: Alignment.center,
-        child: gymName.isEmpty
-            ? const Icon(Icons.store, color: AppColors.accent, size: 32)
-            : Text(
-                gymName[0].toUpperCase(),
-                style: const TextStyle(
-                  color:      AppColors.accent,
-                  fontSize:   28,
-                  fontWeight: FontWeight.w500,
+                  ],
                 ),
-              ),
+        ],
       ),
     );
   }
 
-  Widget _buildFieldRow({
-    required String               label,
+  SliverAppBar _buildAppBar() {
+    return SliverAppBar(
+      backgroundColor: Colors.transparent,
+      elevation: 0,
+      pinned: true,
+      leading: IconButton(
+        icon: Container(
+          padding: const EdgeInsets.all(8),
+          decoration: BoxDecoration(
+            color: Colors.white.withOpacity(0.05),
+            shape: BoxShape.circle,
+          ),
+          child: const Icon(Icons.arrow_back_ios_new_rounded, size: 14, color: Colors.white),
+        ),
+        onPressed: widget.onBack,
+      ),
+      title: const Text(
+        'STUDIO PROFILE',
+        style: TextStyle(
+          fontSize: 14,
+          fontWeight: FontWeight.w900,
+          letterSpacing: 1.5,
+          color: Colors.white,
+        ),
+      ),
+      centerTitle: true,
+    );
+  }
+
+  Widget _buildNeuralHeader() {
+    final gymName = _studioNameController.text.trim();
+    final firstChar = gymName.isNotEmpty ? gymName[0].toUpperCase() : 'S';
+
+    return Column(
+      children: [
+        Stack(
+          alignment: Alignment.center,
+          children: [
+            // Layer 1: Outer Atmosphere
+            Container(
+              width: 140, height: 140,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                border: Border.all(color: AppColors.primaryBlue.withOpacity(0.1), width: 1),
+              ),
+            ),
+            // Layer 2: Main Orb Core
+            Container(
+              width: 110, height: 110,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                gradient: LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [
+                    AppColors.primaryBlue.withOpacity(0.15),
+                    AppColors.background,
+                  ],
+                ),
+                border: Border.all(color: AppColors.primaryBlue.withOpacity(0.3), width: 1.5),
+                boxShadow: [
+                  BoxShadow(
+                    color: AppColors.primaryBlue.withOpacity(0.08),
+                    blurRadius: 40,
+                    spreadRadius: 8,
+                  ),
+                ],
+              ),
+              child: Center(
+                child: ShaderMask(
+                  shaderCallback: (bounds) => LinearGradient(
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                    colors: [
+                      Colors.white,
+                      AppColors.primaryBlue,
+                    ],
+                  ).createShader(bounds),
+                  child: const Icon(
+                    Icons.fitness_center_rounded,
+                    size: 48,
+                    color: Colors.white,
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 28),
+        // RETAIN: Liquid Silver/Gold Gradient Text
+        ShaderMask(
+          shaderCallback: (bounds) => LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [
+              Colors.white,
+              Colors.white.withOpacity(0.7),
+              AppColors.primaryBlue.withOpacity(0.8),
+            ],
+            stops: const [0.0, 0.4, 1.0],
+          ).createShader(bounds),
+          child: Text(
+            gymName.toUpperCase(),
+            textAlign: TextAlign.center,
+            style: GoogleFonts.outfit(
+              fontSize: 30,
+              fontWeight: FontWeight.w800,
+              letterSpacing: -0.8,
+              color: Colors.white,
+            ),
+          ),
+        ),
+        const SizedBox(height: 12),
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+          decoration: BoxDecoration(
+            color: AppColors.primaryBlue.withOpacity(0.1),
+            borderRadius: BorderRadius.circular(30),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.verified_rounded, size: 12, color: AppColors.primaryBlue),
+              const SizedBox(width: 8),
+              Text(
+                'ELITE STUDIO PARTNER',
+                style: GoogleFonts.outfit(
+                  fontSize: 9,
+                  fontWeight: FontWeight.w900,
+                  letterSpacing: 0.5,
+                  color: AppColors.primaryBlue,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildModuleHeader(String title) {
+    return Padding(
+      padding: const EdgeInsets.only(left: 4, bottom: 16),
+      child: Align(
+        alignment: Alignment.centerLeft,
+        child: Text(
+          title,
+          style: GoogleFonts.outfit(
+            fontSize: 13,
+            fontWeight: FontWeight.bold,
+            letterSpacing: 1.5,
+            color: AppColors.primaryText,
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildModuleCard(List<Widget> children) {
+    return Container(
+      decoration: BoxDecoration(
+        color: AppColors.cardBackground.withOpacity(0.4),
+        borderRadius: BorderRadius.circular(30),
+        border: Border.all(color: Colors.white.withOpacity(0.03)),
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(30),
+        child: Column(children: children),
+      ),
+    );
+  }
+
+  Widget _buildInteractiveRow({
+    required String title,
     required TextEditingController controller,
-    required String               fieldId,
-    required String               hint,
+    required String fieldId,
+    required IconData icon,
+    bool isLast = false,
   }) {
     final bool isEditing = _editingField == fieldId;
-    final bool hasValue  = controller.text.isNotEmpty;
 
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            label,
-            style: const TextStyle(
-              color:      AppColors.accent,
-              fontSize:   12,
-              fontWeight: FontWeight.normal,
+    return Column(
+      children: [
+        AnimatedContainer(
+          duration: const Duration(milliseconds: 200),
+          decoration: BoxDecoration(
+            color: isEditing ? AppColors.primaryBlue.withOpacity(0.05) : Colors.transparent,
+          ),
+          child: InkWell(
+            onTap: isEditing ? null : () => _startEditing(fieldId, controller),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
+              child: Row(
+                children: [
+                  Icon(
+                    icon, 
+                    size: 20, 
+                    color: isEditing ? AppColors.primaryBlue : AppColors.secondaryText.withOpacity(0.4)
+                  ),
+                  const SizedBox(width: 20),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          title,
+                          style: GoogleFonts.outfit(
+                            fontSize: 8,
+                            fontWeight: FontWeight.w900,
+                            letterSpacing: 1.5,
+                            color: isEditing ? AppColors.primaryBlue : AppColors.secondaryText.withOpacity(0.5),
+                          ),
+                        ),
+                        const SizedBox(height: 6),
+                        if (isEditing)
+                          TextField(
+                            controller: controller,
+                            autofocus: true,
+                            style: GoogleFonts.outfit(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w600,
+                              color: Colors.white,
+                            ),
+                            decoration: const InputDecoration(
+                              isDense: true,
+                              contentPadding: EdgeInsets.zero,
+                              border: InputBorder.none,
+                            ),
+                            onSubmitted: (_) => _saveField(fieldId),
+                          )
+                        else
+                          Text(
+                            controller.text.isEmpty ? '—' : controller.text,
+                            style: GoogleFonts.outfit(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w600,
+                              color: Colors.white.withOpacity(0.9),
+                              letterSpacing: 0.2,
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+                  if (isEditing)
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        GestureDetector(
+                          onTap: () => _cancelEditing(controller),
+                          child: Container(
+                            padding: const EdgeInsets.all(6),
+                            decoration: BoxDecoration(
+                              color: Colors.white.withOpacity(0.05),
+                              shape: BoxShape.circle,
+                            ),
+                            child: Icon(Icons.close_rounded, color: AppColors.secondaryText, size: 18),
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        _isSaving
+                            ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.primaryBlue))
+                            : GestureDetector(
+                                onTap: () => _saveField(fieldId),
+                                child: Container(
+                                  padding: const EdgeInsets.all(6),
+                                  decoration: BoxDecoration(
+                                    color: AppColors.primaryBlue.withOpacity(0.1),
+                                    shape: BoxShape.circle,
+                                  ),
+                                  child: Icon(Icons.check_rounded, color: AppColors.primaryBlue, size: 18),
+                                ),
+                              ),
+                      ],
+                    )
+                  else
+                    Icon(Icons.edit_note_rounded, color: Colors.white.withOpacity(0.2), size: 18),
+                ],
+              ),
             ),
           ),
-          const SizedBox(height: 8),
+        ),
+        if (!isLast)
+          Divider(color: Colors.white.withOpacity(0.02), height: 1, indent: 64),
+      ],
+    );
+  }
 
-          if (isEditing)
-            Row(
-              children: [
-                Expanded(
-                  child: TextFormField(
-                    controller: controller,
-                    autofocus:  true,
-                    style: const TextStyle(
-                      color:      AppColors.primaryText,
-                      fontSize:   16,
-                      fontWeight: FontWeight.w500,
-                    ),
-                    cursorColor: AppColors.accent,
-                    decoration: InputDecoration(
-                      filled:     true,
-                      fillColor:  AppColors.cardBackground,
-                      hintText:   hint,
-                      hintStyle:  const TextStyle(
-                        fontSize:   16,
-                        fontWeight: FontWeight.normal,
-                        color:      AppColors.secondaryText,
-                      ),
-                      isDense:    true,
-                      contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(12),
-                        borderSide:   BorderSide.none,
-                      ),
-                      focusedBorder: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(12),
-                        borderSide:   const BorderSide(color: AppColors.accent, width: 2),
-                      ),
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                if (_isSaving)
-                  const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.accent))
-                else ...[
-                  IconButton(
-                    onPressed: () => _saveField(fieldId),
-                    icon:      const Icon(Icons.check, color: AppColors.accent, size: 20),
-                    padding:   EdgeInsets.zero,
-                    constraints: const BoxConstraints(),
-                  ),
-                  const SizedBox(width: 8),
-                  IconButton(
-                    onPressed: () => _cancelEditing(controller),
-                    icon:      const Icon(Icons.close, color: AppColors.secondaryText, size: 20),
-                    padding:   EdgeInsets.zero,
-                    constraints: const BoxConstraints(),
-                  ),
-                ],
-              ],
-            )
-          else
-            GestureDetector(
-              onTap: () => _startEditing(fieldId, controller),
-              behavior: HitTestBehavior.opaque,
-              child: Container(
-                width:  double.infinity,
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
-                decoration: BoxDecoration(
-                  color:        AppColors.cardBackground,
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Row(
+  Widget _buildReadOnlyRow({
+    required String title,
+    required String value,
+    required IconData icon,
+    bool isLast = false,
+  }) {
+    return Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
+          child: Row(
+            children: [
+              Icon(icon, size: 20, color: AppColors.secondaryText.withOpacity(0.2)),
+              const SizedBox(width: 20),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Expanded(
-                      child: Text(
-                        hasValue ? controller.text : hint,
-                        style: TextStyle(
-                          fontSize:   16,
-                          fontWeight: hasValue ? FontWeight.w500 : FontWeight.normal,
-                          color:      hasValue ? AppColors.primaryText : AppColors.secondaryText,
-                        ),
+                    Text(
+                      title,
+                      style: GoogleFonts.outfit(
+                        fontSize: 8,
+                        fontWeight: FontWeight.w900,
+                        letterSpacing: 1.5,
+                        color: AppColors.secondaryText.withOpacity(0.3),
                       ),
                     ),
-                    const Icon(Icons.chevron_right, size: 18, color: AppColors.secondaryText),
+                    const SizedBox(height: 6),
+                    Text(
+                      value.isEmpty ? '—' : value,
+                      style: GoogleFonts.outfit(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w600,
+                        color: AppColors.secondaryText.withOpacity(0.3),
+                      ),
+                    ),
                   ],
                 ),
               ),
-            ),
-        ],
-      ),
+              Icon(Icons.lock_person_rounded, color: Colors.white.withOpacity(0.05), size: 16),
+            ],
+          ),
+        ),
+        if (!isLast)
+          Divider(color: Colors.white.withOpacity(0.02), height: 1, indent: 64),
+      ],
     );
   }
 
-  Widget _buildContactRow() {
-    final bool hasValue = _phoneController.text.isNotEmpty;
-
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Text(
-            'CONTACT',
-            style: TextStyle(
-              color:      AppColors.accent,
-              fontSize:   12,
-              fontWeight: FontWeight.normal,
-            ),
+  Widget _buildFooter() {
+    return Column(
+      children: [
+        Container(
+          width: 40, height: 2,
+          decoration: BoxDecoration(
+            color: AppColors.primaryBlue.withOpacity(0.1),
+            borderRadius: BorderRadius.circular(1),
           ),
-          const SizedBox(height: 8),
-          Container(
-            width:  double.infinity,
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
-            decoration: BoxDecoration(
-              color:        AppColors.cardBackground,
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: Text(
-              hasValue ? _phoneController.text : '—',
-              style: TextStyle(
-                fontSize:   16,
-                fontWeight: FontWeight.normal,
-                color:      AppColors.secondaryText.withOpacity(0.5),
-              ),
-            ),
+        ),
+        const SizedBox(height: 16),
+        Text(
+          'GYM-OPS ELITE PLATFORM',
+          style: GoogleFonts.outfit(
+            fontSize: 8,
+            fontWeight: FontWeight.w900,
+            letterSpacing: 4.0,
+            color: AppColors.secondaryText.withOpacity(0.2),
           ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 }

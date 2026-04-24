@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../constants/app_colors.dart';
 import '../screens/member_detail_screen.dart';
+import '../models/member.dart';
 
 class RecentActivity extends StatelessWidget {
   final List<dynamic> attentionMembers;
@@ -62,14 +63,9 @@ class RecentActivity extends StatelessWidget {
 
               if (label == 'expiring') {
                 subtitle = 'Expires on $expiryDate';
-                badgeText = 'Expiring';
+                badgeText = 'Expiring Soon';
                 badgeColor = Colors.orangeAccent;
                 icon = Icons.schedule;
-              } else if (label == 'trial') {
-                subtitle = 'Trial member';
-                badgeText = 'Trial';
-                badgeColor = Colors.blueAccent;
-                icon = Icons.timer;
               } else if (label == 'overdue') {
                 subtitle = 'Expired on $expiryDate';
                 badgeText = 'Overdue';
@@ -84,6 +80,7 @@ class RecentActivity extends StatelessWidget {
                 subtitle,
                 badgeColor,
                 badgeText,
+                member,
               );
             },
           ),
@@ -91,48 +88,89 @@ class RecentActivity extends StatelessWidget {
     );
   }
 
-  Widget _buildListItem(BuildContext context, IconData icon, String title, String subtitle, Color color, String badge) {
-    return ListTile(
+  Widget _buildListItem(BuildContext context, IconData icon, String title, String subtitle, Color color, String badge, Map<String, dynamic> memberData) {
+    return InkWell(
       onTap: () {
-        Navigator.push(context, MaterialPageRoute(builder: (context) => MemberDetailScreen(memberName: title)));
+        final member = Member(
+          id: memberData['id'],
+          memberName: memberData['member_name'] ?? '',
+          phone: memberData['phone'] ?? '',
+          status: memberData['status'],
+          isTrial: memberData['is_trial'] ?? false,
+          expiryDate: memberData['expiry_date'],
+          membershipTypeId: memberData['membership_type_id'],
+        );
+
+        Navigator.push(
+          context,
+          PageRouteBuilder(
+            pageBuilder: (_, __, ___) => MemberDetailScreen(memberName: title, member: member),
+            transitionDuration: Duration.zero,
+            reverseTransitionDuration: Duration.zero,
+          ),
+        );
       },
-      leading: Container(
-        padding: EdgeInsets.all(10),
-        decoration: BoxDecoration(
-          color: AppColors.cardBackground,
-          shape: BoxShape.circle,
-          border: Border.all(color: AppColors.border),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 20.0, vertical: 12.0),
+        child: Row(
+          children: [
+            // Icon Container - Matches Quick Actions style
+            Container(
+              padding: EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: AppColors.cardBackground,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: AppColors.border),
+              ),
+              child: Icon(icon, color: color, size: 22),
+            ),
+            SizedBox(width: 16),
+            // Name and Status
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    style: TextStyle(
+                      color: AppColors.primaryText,
+                      fontSize: 16,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  SizedBox(height: 4),
+                  Text(
+                    subtitle,
+                    style: TextStyle(
+                      color: AppColors.secondaryText,
+                      fontSize: 13,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            // Badge
+            Container(
+              padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              decoration: BoxDecoration(
+                color: color.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(6),
+                border: Border.all(color: color.withOpacity(0.5)),
+              ),
+              child: Text(
+                badge,
+                style: TextStyle(
+                  color: color,
+                  fontSize: 10,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ),
+            SizedBox(width: 12),
+            Icon(Icons.chevron_right, color: AppColors.secondaryText, size: 20),
+          ],
         ),
-        child: Icon(icon, color: color, size: 20),
       ),
-      title: Row(
-        children: [
-          Expanded(
-            child: Text(
-              title,
-              style: TextStyle(color: AppColors.primaryText, fontWeight: FontWeight.w600),
-            ),
-          ),
-          Container(
-            padding: EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-            decoration: BoxDecoration(
-              color: color.withOpacity(0.1),
-              borderRadius: BorderRadius.circular(4),
-              border: Border.all(color: color.withOpacity(0.5)),
-            ),
-            child: Text(
-              badge,
-              style: TextStyle(color: color, fontSize: 10, fontWeight: FontWeight.bold),
-            ),
-          ),
-        ],
-      ),
-      subtitle: Text(
-        subtitle,
-        style: TextStyle(color: AppColors.secondaryText),
-      ),
-      trailing: Icon(Icons.chevron_right, color: AppColors.secondaryText),
-      contentPadding: EdgeInsets.symmetric(horizontal: 20, vertical: 5),
     );
   }
 }

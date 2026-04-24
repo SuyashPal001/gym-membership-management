@@ -35,46 +35,29 @@ class RouteGuard {
         return MainScaffold();
         
       } on ApiException catch (e) {
-        print('RouteGuard ApiException: ${e.statusCode} — ${e.message}');
-
         if (e.statusCode == 404) {
-          // No gym found for this Cognito sub → Needs onboarding
           return const OnboardingScreen();
         }
-
         if (e.statusCode == 401) {
-          // Token rejected → force fresh login
           await AuthService.signOut();
           return const LoginScreen();
         }
-
         if (e.statusCode == 0) {
-          print('RouteGuard: No network, routing offline.');
-          return MainScaffold(); // keeps session intact, user sees offline state
+          return MainScaffold();
         }
-        // All other backend errors (500 etc) → don't wipe session
-        print('RouteGuard: Backend error ${e.statusCode}, routing to MainScaffold offline.');
         return MainScaffold();
 
       } on SocketException catch (_) {
-        print('RouteGuard: No network, routing offline.');
         return const LoginScreen();
 
       } on TimeoutException catch (_) {
-        print('RouteGuard: Request timed out, routing offline.');
         return const LoginScreen();
 
-      } on Exception catch (e) {
-        final errStr = e.toString().toLowerCase();
-        if (errStr.contains('not authenticated')) {
-          return const LoginScreen();
-        }
-        print('RouteGuard Error: $e');
+      } on Exception catch (_) {
         return const LoginScreen();
       }
-      
-    } catch (e) {
-      print('RouteGuard Fatal Error: $e');
+
+    } catch (_) {
       return const LoginScreen();
     }
   }

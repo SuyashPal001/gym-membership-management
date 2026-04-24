@@ -11,6 +11,9 @@ const attendanceRoutes = require('./routes/attendanceRoutes');
 const aiRoutes = require('./routes/aiRoutes');
 const voiceRoutes = require('./routes/voiceRoutes');
 const gymRoutes = require('./routes/gymRoutes');
+const staffRoutes = require('./routes/staffRoutes');
+const initCron = require('./workers/reminderCron');
+const memberService = require('./services/memberService');
 
 dotenv.config();
 
@@ -47,14 +50,17 @@ app.use('/api/payments', cognitoAuth, resolveGymId, paymentRoutes);
 app.use('/api/reminders', cognitoAuth, resolveGymId, reminderRoutes);
 app.use('/api/attendance', cognitoAuth, resolveGymId, attendanceRoutes);
 app.use('/api/gym', cognitoAuth, resolveGymId, gymRoutes);
+app.use('/api/staff', cognitoAuth, resolveGymId, staffRoutes);
 
 // AI & Voice Routes
 app.use('/api/ai', cognitoAuth, resolveGymId, aiRoutes);
 app.use('/api/voice', cognitoAuth, resolveGymId, voiceRoutes);
 
-// Daily Reset Cron (Midnight UTC)
+// Daily membership lifecycle sweep (Midnight UTC)
 cron.schedule('0 0 * * *', () => {
-  console.log('[CRON] New day started - attendance reset naturally');
+  memberService.autoExpireMembers()
+    .then(() => console.log('[CRON] Membership expiry sweep completed'))
+    .catch((err) => console.error('[CRON] Membership expiry sweep failed:', err.message));
 });
 
 // Database sync and Start
@@ -64,6 +70,10 @@ sequelize.authenticate()
     return sequelize.sync();
   })
   .then(() => {
+    memberService.autoExpireMembers()
+      .then(() => console.log('[BOOT] Membership expiry sweep completed'))
+      .catch((err) => console.error('[BOOT] Membership expiry sweep failed:', err.message));
+    initCron();
     app.listen(PORT, '0.0.0.0', () => {
       console.log(`Rocket Server running on http://0.0.0.0:${PORT}`);
     });

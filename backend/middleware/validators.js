@@ -14,7 +14,6 @@ const validate = (req, res, next) => {
 
 // ─── Member Validation Rules ──────────────────────────────────────────────────
 const memberValidationRules = [
-  body('gym_id').isUUID().withMessage('Valid Gym ID is required'),
   body('member_name')
     .trim()
     .notEmpty().withMessage('Name is required')
@@ -23,7 +22,7 @@ const memberValidationRules = [
   body('phone')
     .trim()
     .notEmpty().withMessage('Phone is required')
-    .matches(/^[0-9+\- ]+$/).withMessage('Invalid phone format'),
+    .matches(/^\+91[0-9]{10}$/).withMessage('Invalid phone format — must be +91XXXXXXXXXX'),
   body('email')
     .optional({ checkFalsy: true })
     .trim()

@@ -1,45 +1,47 @@
 const express = require('express');
 const router = express.Router();
 const memberService = require('../services/memberService');
-const { WorkflowReminder, Member, AttendanceSession, Payment } = require('../models');
+const { WorkflowReminder, Member, AttendanceSession, Payment, MembershipType } = require('../models');
+const { Op } = require('sequelize');
 const dayjs = require('dayjs');
 const utc = require('dayjs/plugin/utc');
 dayjs.extend(utc);
 
 const { memberValidationRules, validate } = require('../middleware/validators');
-const multer = require('multer');
-const path = require('path');
-const fs = require('fs');
-
-// ─── Multer Setup ─────────────────────────────────────────────────────────────
-const storage = multer.diskStorage({
-  destination: function (req, file, cb) {
-    const dir = 'uploads/avatars/';
-    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-    cb(null, dir);
-  },
-  filename: function (req, file, cb) {
-    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1e9);
-    cb(null, 'avatar-' + uniqueSuffix + path.extname(file.originalname));
-  }
-});
-const upload = multer({ 
-  storage: storage,
-  limits: { fileSize: 5 * 1024 * 1024 }, // 5MB limit
-  fileFilter: (req, file, cb) => {
-    if (file.mimetype.startsWith('image/')) cb(null, true);
-    else cb(new Error('Only images are allowed'));
-  }
-});
 
 // ─── Membership Types ─────────────────────────────────────────────────────────
 
 // GET /api/members/membership-types
 router.get('/membership-types', async (req, res) => {
   try {
-    // BUG 5 FIX: Pass gymId from middleware to service
     const types = await memberService.getMembershipTypes(req.gymId);
+    console.log(`[membership-types] gymId=${req.gymId} → ${types.length} plans`);
     res.json({ success: true, data: types });
+  } catch (err) {
+    console.error(`[membership-types] ERROR gymId=${req.gymId}:`, err.message);
+    res.status(400).json({ success: false, message: err.message });
+  }
+});
+
+
+// POST /api/members/membership-types
+router.post('/membership-types', async (req, res) => {
+  try {
+    const { name, amount, duration_months } = req.body;
+    if (!name || !amount || !duration_months) {
+      return res.status(400).json({
+        success: false,
+        message: 'name, amount and duration_months are required'
+      });
+    }
+    const { MembershipType } = require('../models');
+    const type = await MembershipType.create({
+      gym_id: req.gymId,
+      name,
+      amount,
+      duration_months
+    });
+    res.status(201).json({ success: true, data: type });
   } catch (err) {
     res.status(400).json({ success: false, message: err.message });
   }
@@ -49,12 +51,13 @@ router.get('/membership-types', async (req, res) => {
 
 // POST /api/members — Enroll new member
 router.post('/', memberValidationRules, validate, async (req, res) => {
+  console.log('[enroll] body:', JSON.stringify(req.body));
   try {
-    // Inject gym_id from middleware into the creation payload
     const payload = { ...req.body, gym_id: req.gymId };
     const member = await memberService.createMember(payload);
     res.status(201).json({ success: true, data: member });
   } catch (err) {
+    console.error('[enroll] error:', err.message);
     res.status(400).json({ success: false, message: err.message });
   }
 });
@@ -64,7 +67,7 @@ router.get('/', async (req, res) => {
   try {
     const { status, membership_type_id, expiring_in } = req.query;
     const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-    
+
     if (membership_type_id && !uuidRegex.test(membership_type_id)) {
       return res.status(400).json({ success: false, message: 'Invalid membership_type_id format' });
     }
@@ -86,16 +89,13 @@ router.get('/', async (req, res) => {
   }
 });
 
-// GET /api/members/attention (formerly /api/members/:gym_id/attention)
+// GET /api/members/attention
 router.get('/attention', async (req, res) => {
   try {
     const today = dayjs.utc().format('YYYY-MM-DD');
-    const in7Days = dayjs.utc().add(7, 'day').format('YYYY-MM-DD');
+    const in2Days = dayjs.utc().add(2, 'day').format('YYYY-MM-DD');
 
-    const { Op } = require('sequelize');
-    const { MembershipType } = require('../models/Member');
-
-    // Group 1 — Expiring soon (non-trial)
+    // Group 1 — Expiring in 1–2 days (non-trial active members only)
     const expiring = await Member.findAll({
       where: {
         gym_id: req.gymId,
@@ -103,24 +103,14 @@ router.get('/attention', async (req, res) => {
         is_trial: false,
         expiry_date: {
           [Op.gte]: today,
-          [Op.lte]: in7Days
+          [Op.lte]: in2Days
         }
       },
       include: [{ model: MembershipType, as: 'MembershipType', attributes: ['name'] }],
       order: [['expiry_date', 'ASC']]
     });
 
-    // Group 2 — Trial members
-    const trials = await Member.findAll({
-      where: {
-        gym_id: req.gymId,
-        is_trial: true,
-        status: 'trial'
-      },
-      include: [{ model: MembershipType, as: 'MembershipType', attributes: ['name'] }]
-    });
-
-    // Group 3 — Overdue
+    // Group 2 — Overdue (expired status or active with past expiry)
     const overdue = await Member.findAll({
       where: {
         gym_id: req.gymId,
@@ -138,8 +128,7 @@ router.get('/attention', async (req, res) => {
 
     const combinedList = [
       ...expiring.map(m => ({ ...m.toJSON(), label: 'expiring' })),
-      ...trials.map(m => ({ ...m.toJSON(), label: 'trial' })),
-      ...overdue.map(m => ({ ...m.toJSON(), label: 'overdue' }))
+      ...overdue.map(m => ({ ...m.toJSON(), label: 'overdue' })),
     ];
 
     res.json({
@@ -160,6 +149,16 @@ router.get('/attention', async (req, res) => {
   }
 });
 
+// GET /api/members/growth — Last 3 months enrollment trend + status breakdown
+router.get('/growth', async (req, res) => {
+  try {
+    const data = await memberService.getMemberGrowth(req.gymId);
+    res.json({ success: true, data });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
 // GET /api/members/:id (formerly /api/members/:gym_id/:id) — Get single member
 router.get('/:id', async (req, res) => {
   try {
@@ -171,7 +170,7 @@ router.get('/:id', async (req, res) => {
 });
 
 // PUT /api/members/:id — Update member details
-router.put('/:id', memberValidationRules, validate, async (req, res) => {
+router.put('/:id', async (req, res) => {
   try {
     const member = await memberService.updateMember(req.params.id, req.gymId, req.body);
     res.json({ success: true, data: member });
@@ -204,31 +203,12 @@ router.delete('/:id', async (req, res) => {
   }
 });
 
-// GET /api/members/:id/stats — Get simplified stats
-router.get('/:id/stats', async (req, res) => {
-  try {
-    const stats = await memberService.getMemberStats(req.params.id, req.gymId);
-    res.json({ success: true, data: stats });
-  } catch (err) {
-    res.status(400).json({ success: false, message: err.message });
-  }
-});
-
-// POST /api/members/:id/avatar — Upload avatar
-router.post('/:id/avatar', upload.single('avatar'), async (req, res) => {
-  try {
-    if (!req.file) throw new Error('No file uploaded');
-    const avatarUrl = `/uploads/avatars/${req.file.filename}`;
-    await memberService.updateMember(req.params.id, req.gymId, { avatar: avatarUrl });
-    res.json({ success: true, data: { avatarUrl } });
-  } catch (err) {
-    res.status(400).json({ success: false, message: err.message });
-  }
-});
-
 // POST /api/members/:id/reminders/manual
 router.post('/:id/reminders/manual', async (req, res) => {
   try {
+    const member = await Member.findOne({ where: { id: req.params.id, gym_id: req.gymId } });
+    if (!member) return res.status(404).json({ success: false, message: 'Member not found' });
+
     const { method, scheduled_date, payload } = req.body;
     const reminder = await WorkflowReminder.create({
       member_id: req.params.id,
@@ -252,24 +232,24 @@ router.get('/:member_id/attendance-summary', async (req, res) => {
 
     const [total_visits, lastSession, currentPaymentsLtv] = await Promise.all([
       AttendanceSession.count({ where: { member_id } }),
-      AttendanceSession.findOne({ 
-        where: { member_id }, 
-        order: [['check_in_time', 'DESC']] 
+      AttendanceSession.findOne({
+        where: { member_id },
+        order: [['check_in_time', 'DESC']]
       }),
-      Payment.sum('amount', { 
-        where: { member_id, status: 'paid' } 
+      Payment.sum('amount', {
+        where: { member_id, status: 'paid' }
       })
     ]);
 
     const totalLtv = (member.lifetime_value || 0) + (currentPaymentsLtv || 0);
 
-    res.json({ 
-      success: true, 
-      data: { 
-        total_visits, 
-        last_arrival: lastSession ? lastSession.check_in_time : null, 
+    res.json({
+      success: true,
+      data: {
+        total_visits,
+        last_arrival: lastSession ? lastSession.check_in_time : null,
         ltv: totalLtv
-      } 
+      }
     });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });

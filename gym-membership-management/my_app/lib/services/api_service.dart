@@ -4,8 +4,9 @@ import 'dart:io';
 
 import 'package:http/http.dart' as http;
 import '../config/api_config.dart';
-import '../models/crm_models.dart';
+import '../models/growth_models.dart';
 import '../models/member.dart';
+import '../models/staff_models.dart';
 import '../models/payment_models.dart';
 import '../models/reminder_models.dart';
 import '../models/attendance_summary.dart';
@@ -106,6 +107,11 @@ class ApiService {
     return (data as List).map((e) => Member.fromJson(e)).toList();
   }
 
+  static Future<GrowthData> fetchMemberGrowth() async {
+    final uri = Uri.parse('$baseUrl/members/growth');
+    return GrowthData.fromJson(_parseData(await _get(uri), 'Fetch failed'));
+  }
+
   static Future<List<dynamic>> fetchAttentionMembers() async {
     final uri = Uri.parse('$baseUrl/members/attention');
     return _parseData(await _get(uri), 'Fetch failed');
@@ -123,16 +129,6 @@ class ApiService {
     if (res.statusCode != 200) throw ApiException('Delete failed', res.statusCode);
   }
 
-  static Future<Map<String, dynamic>> uploadAvatar(String memberId, String base64Image) async {
-    final uri = Uri.parse('$baseUrl/members/$memberId/avatar');
-    return _parseData(await _post(uri, body: json.encode({'image': base64Image})), 'Upload failed');
-  }
-
-  static Future<MemberStats> fetchMemberStats(String memberId) async {
-    final uri = Uri.parse('$baseUrl/members/$memberId/stats');
-    return MemberStats.fromJson(_parseData(await _get(uri), 'Fetch failed'));
-  }
-
   static Future<Member> renewMembership(String memberId, String membershipTypeId) async {
     final uri = Uri.parse('$baseUrl/members/$memberId/renew');
     final data = _parseData(await _post(uri, body: json.encode({'membership_type_id': membershipTypeId})), 'Renew failed');
@@ -147,15 +143,15 @@ class ApiService {
 
   // ─── Attendance ─────────────────────────────────────────────────────────────
 
-  static Future<Map<String, dynamic>> scanAttendance(String phone) async {
-    final uri = Uri.parse('$baseUrl/attendance/scan');
-    return _parseData(await _post(uri, body: json.encode({'phone': phone})), 'Scan failed');
-  }
-
   static Future<List<AttendanceSession>> fetchLiveAttendance() async {
     final uri = Uri.parse('$baseUrl/attendance/today');
     final data = _parseData(await _get(uri), 'Fetch failed');
     return (data['currently_in'] as List).map((e) => AttendanceSession.fromJson(e)).toList();
+  }
+
+  static Future<Map<String, dynamic>> fetchTodayAttendanceFull() async {
+    final uri = Uri.parse('$baseUrl/attendance/today');
+    return _parseData(await _get(uri), 'Fetch failed');
   }
 
   static Future<AttendanceSummary> fetchMemberAttendanceSummary(String memberId) async {
@@ -169,23 +165,33 @@ class ApiService {
     return (data as List).map((e) => AttendanceSession.fromJson(e)).toList();
   }
 
+  static Future<Map<String, dynamic>> manualCheckIn(String memberId) async {
+    final uri = Uri.parse('$baseUrl/attendance/checkin');
+    final res = await _post(uri, body: json.encode({'member_id': memberId}));
+    final body = jsonDecode(res.body) as Map<String, dynamic>;
+    if (res.statusCode >= 200 && res.statusCode < 300) return body;
+    throw ApiException(body['message'] ?? 'Check-in failed', res.statusCode);
+  }
+
   // ─── Payments ───────────────────────────────────────────────────────────────
 
-  static Future<List<PaymentSummary>> fetchPaymentSummaries({String? expiryFilter}) async {
-    final query = expiryFilter != null ? {'expiry_filter': expiryFilter} : null;
-    final uri = Uri.parse('$baseUrl/payments').replace(queryParameters: query);
+
+  static Future<List<PaymentSummary>> fetchPaymentSummaries({String? expiryFilter, bool paid = false}) async {
+    final query = <String, String>{};
+    if (expiryFilter != null) query['expiry_filter'] = expiryFilter;
+    if (paid) query['paid'] = 'true';
+    final uri = Uri.parse('$baseUrl/payments').replace(queryParameters: query.isEmpty ? null : query);
     final data = _parseData(await _get(uri), 'Fetch failed');
     return (data as List).map((e) => PaymentSummary.fromJson(e)).toList();
   }
 
-  static Future<void> processPayment(String memberId) async {
-    final uri = Uri.parse('$baseUrl/payments/$memberId');
-    final res = await _post(uri);
-    if (res.statusCode != 200) throw ApiException('Payment failed', res.statusCode);
+  static Future<Map<String, dynamic>> fetchPaymentStats() async {
+    final uri = Uri.parse('$baseUrl/payments/stats');
+    return _parseData(await _get(uri), 'Fetch failed');
   }
 
   static Future<void> markPaymentAsPaid({required String memberId}) async {
-    final uri = Uri.parse('$baseUrl/payments/$memberId/mark-paid');
+    final uri = Uri.parse('$baseUrl/payments/$memberId');
     final response = await _post(uri);
     if (response.statusCode != 200) throw ApiException('Failed to mark payment as paid', response.statusCode);
   }
@@ -204,43 +210,57 @@ class ApiService {
     return (data as List).map((e) => ReminderHistory.fromJson(e)).toList();
   }
 
-  static Future<void> createManualReminder(String memberId, String method, DateTime date, String msg) async {
-    final uri = Uri.parse('$baseUrl/reminders/$memberId');
-    final res = await _post(uri, body: json.encode({'method': method, 'payload': {'message': msg}}));
-    if (res.statusCode != 201 && res.statusCode != 200) throw ApiException('Reminder failed', res.statusCode);
-  }
 
   // ─── AI & Voice ─────────────────────────────────────────────────────────────
 
   static Future<Map<String, dynamic>> scanLedger(String imageBase64) async {
     final uri = Uri.parse('$baseUrl/ai/scan-book');
-    return _parseData(await _post(uri, body: json.encode({'imageBase64': imageBase64}), timeout: const Duration(seconds: 90)), 'Scan failed');
+    final res = await _post(
+      uri,
+      body: json.encode({'imageBase64': imageBase64}),
+      timeout: const Duration(seconds: 90),
+    );
+    final body = jsonDecode(res.body) as Map<String, dynamic>;
+    if (res.statusCode >= 200 && res.statusCode < 300) return body;
+    throw ApiException(body['message'] ?? 'Scan failed', res.statusCode);
   }
 
   static Future<Map<String, dynamic>> confirmLedgerScan(String scanId, List<dynamic> entries) async {
     final uri = Uri.parse('$baseUrl/ai/scan/$scanId/confirm');
-    return _parseData(await _post(uri, body: json.encode({'entries': entries})), 'Confirmation failed');
-  }
-
-  static Future<List<dynamic>> extractLogbook(String base64Image, String mimeType) async {
-    final uri = Uri.parse('$baseUrl/ai/extract-logbook');
-    final data = _parseData(await _post(uri, body: json.encode({'imageBase64': base64Image, 'mimeType': mimeType})), 'Extraction failed');
-    return data['entries'] as List<dynamic>;
+    final res = await _post(uri, body: json.encode({'entries': entries}));
+    final body = jsonDecode(res.body) as Map<String, dynamic>;
+    if (res.statusCode >= 200 && res.statusCode < 300) return body;
+    throw ApiException(body['message'] ?? 'Confirmation failed', res.statusCode);
   }
 
   static Future<Map<String, dynamic>> startVoiceSession() async {
     final uri = Uri.parse('$baseUrl/voice/start');
-    return _parseData(await _post(uri), 'Voice start failed');
+    final res = await _post(uri);
+    final body = jsonDecode(res.body) as Map<String, dynamic>;
+    if (res.statusCode >= 200 && res.statusCode < 300) return body;
+    throw ApiException(body['message'] ?? 'Voice start failed', res.statusCode);
   }
 
-  static Future<Map<String, dynamic>> sendVoiceMessage(String sessionId, String text, List<dynamic> history) async {
+  static Future<Map<String, dynamic>> sendVoiceMessage(
+    String sessionId, String text, List<dynamic> history, {bool isHindi = false}) async {
     final uri = Uri.parse('$baseUrl/voice/message');
-    return _parseData(await _post(uri, body: json.encode({'session_id': sessionId, 'text': text, 'history': history})), 'Message failed');
+    final res = await _post(uri, body: json.encode({
+      'session_id': sessionId,
+      'text': text,
+      'history': history,
+      'language': isHindi ? 'hi' : 'en',
+    }));
+    final body = jsonDecode(res.body) as Map<String, dynamic>;
+    if (res.statusCode >= 200 && res.statusCode < 300) return body;
+    throw ApiException(body['message'] ?? 'Message failed', res.statusCode);
   }
 
   static Future<Map<String, dynamic>> endVoiceSession(String sessionId) async {
     final uri = Uri.parse('$baseUrl/voice/end');
-    return _parseData(await _post(uri, body: json.encode({'session_id': sessionId})), 'End failed');
+    final res = await _post(uri, body: json.encode({'session_id': sessionId}));
+    final body = jsonDecode(res.body) as Map<String, dynamic>;
+    if (res.statusCode >= 200 && res.statusCode < 300) return body;
+    throw ApiException(body['message'] ?? 'End failed', res.statusCode);
   }
 
   static Future<String> transcribeAudio(String audioBase64) async {
@@ -249,10 +269,55 @@ class ApiService {
     return data['text'] as String;
   }
 
-  static Future<String> textToSpeech(String text) async {
+  static Future<String> textToSpeech(String text, {bool isHindi = false}) async {
     final uri = Uri.parse('$baseUrl/voice/speak');
-    final data = _parseData(await _post(uri, body: json.encode({'text': text})), 'TTS failed');
+    final data = _parseData(await _post(uri, body: json.encode({
+      'text': text,
+      'languageCode': isHindi ? 'hi-IN' : 'en-IN',
+    })), 'TTS failed');
     return data['audioBase64'] as String;
+  }
+
+  // ─── Staff ──────────────────────────────────────────────────────────────────
+
+  static Future<List<StaffMember>> fetchStaff() async {
+    final uri = Uri.parse('$baseUrl/staff');
+    final data = _parseData(await _get(uri), 'Fetch failed');
+    return (data as List).map((e) => StaffMember.fromJson(e)).toList();
+  }
+
+  static Future<StaffMember> addStaff(Map<String, dynamic> body) async {
+    final uri = Uri.parse('$baseUrl/staff');
+    final data = _parseData(await _post(uri, body: json.encode(body)), 'Add failed');
+    return StaffMember.fromJson(data);
+  }
+
+  static Future<void> updateStaff(String id, Map<String, dynamic> body) async {
+    final uri = Uri.parse('$baseUrl/staff/$id');
+    final res = await _put(uri, body: json.encode(body));
+    if (res.statusCode != 200) throw ApiException('Update failed', res.statusCode);
+  }
+
+  static Future<void> deleteStaff(String id) async {
+    final uri = Uri.parse('$baseUrl/staff/$id');
+    final res = await _delete(uri);
+    if (res.statusCode != 200) throw ApiException('Delete failed', res.statusCode);
+  }
+
+  static Future<Map<String, dynamic>> toggleStaffAttendance(String id) async {
+    final uri = Uri.parse('$baseUrl/staff/$id/attendance');
+    return _parseData(await _post(uri), 'Toggle failed');
+  }
+
+  static Future<StaffStats> fetchStaffStats(String id) async {
+    final uri = Uri.parse('$baseUrl/staff/$id/stats');
+    return StaffStats.fromJson(_parseData(await _get(uri), 'Fetch failed'));
+  }
+
+  static Future<void> markStaffSalaryPaid(String id) async {
+    final uri = Uri.parse('$baseUrl/staff/$id/salary/pay');
+    final res = await _post(uri);
+    if (res.statusCode != 200) throw ApiException('Payment failed', res.statusCode);
   }
 
   // ─── Helpers ────────────────────────────────────────────────────────────────
@@ -260,7 +325,13 @@ class ApiService {
   static dynamic _parseData(http.Response res, String fallback) {
     final body = jsonDecode(res.body);
     if (res.statusCode >= 200 && res.statusCode < 300) return body['data'];
-    throw ApiException(body['message'] ?? fallback, res.statusCode);
+    // Validator middleware returns {errors: [{field, message}]} instead of {message}
+    String message = body['message'] ?? fallback;
+    final errors = body['errors'];
+    if (errors is List && errors.isNotEmpty) {
+      message = (errors as List).map((e) => e['message']).join(', ');
+    }
+    throw ApiException(message, res.statusCode);
   }
 
   static void _handleNetworkError(Uri uri, dynamic e) {
