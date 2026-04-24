@@ -182,11 +182,9 @@ router.post('/speak', async (req, res) => {
       headers: { 'Authorization': `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({
         input: { text },
-        voice: {
-          languageCode: languageCode || 'en-IN',
-          name: 'en-IN-Neural2-B',
-          ssmlGender: 'MALE'
-        },
+        voice: languageCode === 'hi-IN'
+          ? { languageCode: 'hi-IN', name: 'hi-IN-Neural2-B', ssmlGender: 'MALE' }
+          : { languageCode: 'en-IN', name: 'en-IN-Neural2-B', ssmlGender: 'MALE' },
         audioConfig: { audioEncoding: 'MP3', speakingRate: 0.95, pitch: 0 }
       })
     });
@@ -355,7 +353,7 @@ async function executeTool(toolName, args, gymId) {
 // POST /api/voice/message
 router.post('/message', async (req, res) => {
   try {
-    const { session_id, text, history } = req.body;
+    const { session_id, text, history, language } = req.body;
     const session = await VoiceSession.findOne({ where: { id: session_id, gym_id: req.gymId } });
     if (!session) return res.status(404).json({ success: false, message: 'Session not found or unauthorized' });
 
@@ -369,7 +367,9 @@ router.post('/message', async (req, res) => {
       { role: 'user', parts: [{ text: buildSystemPrompt(ownerName) + '\n\nMember list:\n' + memberListText }] },
       { role: 'model', parts: [{ text: 'Ready to help.' }] },
       ...(history || []).slice(-8).map(turn => ({ role: turn.role === 'ai' ? 'model' : 'user', parts: [{ text: turn.text }] })),
-      { role: 'user', parts: [{ text }] }
+      { role: 'user', parts: [{ text: language === 'hi'
+        ? `[LANGUAGE OVERRIDE — STRICT: Respond ONLY in Hindi Roman script (Hinglish). Never use Devanagari script under any circumstance. NEVER respond in English-only.]\n${text}`
+        : text }] }
     ];
 
     await aiService.init();

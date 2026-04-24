@@ -29,13 +29,97 @@ const isExpiringWithin30Days = (expiryDate) => {
   return diffDays <= 30;
 };
 
+const getDayDiffFromToday = (dateValue) => {
+  if (!dateValue) return null;
+  const target = dayjs.utc(dateValue).startOf('day');
+  if (!target.isValid()) return null;
+  return target.diff(dayjs.utc().startOf('day'), 'day');
+};
+
+// Returns 'inactive' for expired members whose plan ended >30 days ago
+const getEffectiveStatus = (member) => {
+  if (member.status === 'expired' && member.expiry_date) {
+    const diff = getDayDiffFromToday(member.expiry_date); // negative = past
+    if (diff !== null && diff < -30) return 'inactive';
+  }
+  return member.status;
+};
+
+const buildUrgencyLabel = ({ status, expiryDate, lifetimeValue = 0, joinDate }) => {
+  const difference = getDayDiffFromToday(expiryDate);
+
+  if (status === 'trial') {
+    if (difference === null || difference >= 0) return 'TRIAL ONGOING';
+    const days = Math.abs(difference);
+    return `TRIAL OVERDUE ${days} ${days === 1 ? 'DAY' : 'DAYS'}`;
+  }
+
+  // Type 3: never paid — overdue from enrollment day
+  if (lifetimeValue === 0) {
+    const enrolledAt = joinDate ? dayjs.utc(joinDate).startOf('day') : null;
+    const overdueDays = enrolledAt ? dayjs.utc().startOf('day').diff(enrolledAt, 'day') : 0;
+    if (overdueDays === 0) return 'DUE TODAY';
+    return `OVERDUE ${overdueDays} ${overdueDays === 1 ? 'DAY' : 'DAYS'}`;
+  }
+
+  if (difference === null) return 'NO EXPIRY';
+  if (difference === 0) return 'DUE TODAY';
+  if (difference === 1) return 'DUE TOMORROW';
+  if (difference === -1) return 'OVERDUE 1 DAY';
+  if (difference < -1) return `OVERDUE ${Math.abs(difference)} DAYS`;
+  if (difference > 1 && difference < 31) return `DUE IN ${difference} DAYS`;
+
+  return dayjs.utc(expiryDate).format('YYYY-MM-DD');
+};
+
+const formatDisplayPlanName = (member) => {
+  if (member.status === 'trial') {
+    const difference = getDayDiffFromToday(member.expiry_date);
+    if (difference !== null && difference < 0) {
+      return `Trial Overdue by ${Math.abs(difference)} days`;
+    }
+    return 'Ongoing Trial';
+  }
+
+  const months = member.MembershipType?.duration_months;
+  if (months) return `${months} Month`;
+  return member.MembershipType?.name ?? '—';
+};
+
+const buildPaymentSummaryViewModel = (member) => {
+  const plainMember = member.get({ plain: true });
+  const hasMembershipPlan = !!plainMember.MembershipType;
+  const lifecycleType = plainMember.status === 'trial'
+    ? 'trial'
+    : hasMembershipPlan
+      ? 'plan_due'
+      : 'unplanned';
+
+  return {
+    ...plainMember,
+    has_membership_plan: hasMembershipPlan,
+    lifecycle_type: lifecycleType,
+    primary_action: plainMember.status === 'trial' ? 'convert' : 'mark_paid',
+    display_plan_name: formatDisplayPlanName(plainMember),
+    display_amount: plainMember.status === 'trial'
+      ? null
+      : (hasMembershipPlan ? plainMember.MembershipType.amount : 0),
+    urgency_label: buildUrgencyLabel({
+      status: plainMember.status,
+      expiryDate: plainMember.expiry_date,
+      lifetimeValue: plainMember.lifetime_value,
+      joinDate: plainMember.join_date,
+    }),
+  };
+};
+
 // ─── Service ──────────────────────────────────────────────────────────────────
 
 const memberService = {
 
   // Create new member enrollment
   createMember: async (data) => {
-    const { gym_id, member_name, phone, email, avatar, membership_type_id, is_trial, payment_collected } = data;
+    const { gym_id, member_name, phone, email, membership_type_id, is_trial, payment_collected } = data;
 
     // Validations
     if (!member_name || !phone || !gym_id) {
@@ -45,36 +129,62 @@ const memberService = {
       throw new Error('Invalid email format');
     }
 
+    // Enforce that member must either have a membership plan or be a trial
+    if (!is_trial && !membership_type_id) {
+      throw new Error('Member must either have a membership plan or be enrolled as a trial');
+    }
+
     // Check duplicate phone in same gym
     const existing = await Member.findOne({ where: { phone, gym_id } });
     if (existing) throw new Error('Member with this phone already exists');
 
     // Fetch membership type for expiry calculation
     let expiry_date = null;
+    let membershipType = null;
     if (membership_type_id && !is_trial) {
-      const membershipType = await MembershipType.findByPk(membership_type_id);
+      membershipType = await MembershipType.findByPk(membership_type_id);
       if (!membershipType) throw new Error('Invalid membership type');
       expiry_date = calculateExpiryDate(dayjs.utc().toDate(), membershipType.duration_months); // BUG 1 FIX
     }
 
-    // If trial, set 30 day expiry by default (1 month)
+    // Trials expire after 1 day
     if (is_trial) {
-      expiry_date = calculateExpiryDate(dayjs.utc().toDate(), 1); // BUG 1 FIX
+      expiry_date = dayjs.utc().add(1, 'day').toDate();
     }
+
+    const initialLtv = (payment_collected && membershipType && !is_trial) 
+      ? membershipType.amount 
+      : 0;
+
+    const firstLetter = member_name.trim().charAt(0).toUpperCase();
 
     const member = await Member.create({
       gym_id,
       member_name,
       phone,
       email,
-      avatar,
+      avatar: firstLetter,
       membership_type_id: is_trial ? null : membership_type_id,
       join_date: dayjs.utc().toDate(), // BUG 1 FIX
       expiry_date,
       status: is_trial ? 'trial' : 'active',
       is_trial,
       payment_collected,
+      lifetime_value: initialLtv,
     });
+
+    // Create Payment record for audit trail if payment collected
+    if (payment_collected && membershipType && !is_trial) {
+      await Payment.create({
+        gym_id,
+        member_id: member.id,
+        amount: membershipType.amount,
+        status: 'paid',
+        payment_date: dayjs.utc().toDate(),
+        method: 'enrollment'
+      });
+    }
+
 
     // MODE 2: AUTO REMINDERS (Execute async without blocking the response)
     if (expiry_date) {
@@ -134,7 +244,7 @@ const memberService = {
       }
     }
 
-    return await Member.findAll({
+    const raw = await Member.findAll({
       where,
       attributes: [
         'id', 
@@ -147,12 +257,17 @@ const memberService = {
         'payment_collected', 
         'join_date'
       ],
-      include: [{ 
-        model: MembershipType, 
-        attributes: ['name'],
+      include: [{
+        model: MembershipType,
+        attributes: ['name', 'duration_months'],
         required: false
       }],
       order: [['join_date', 'DESC'], ['createdAt', 'DESC']],
+    });
+    return raw.map(m => {
+      const plain = m.toJSON();
+      plain.status = getEffectiveStatus(plain);
+      return plain;
     });
   },
 
@@ -163,43 +278,27 @@ const memberService = {
       include: [{ model: MembershipType, attributes: ['name', 'amount', 'duration_months'] }],
     });
     if (!member) throw new Error('Member not found');
-    return member;
-  },
-
-  // Get clean member stats profile
-  getMemberStats: async (id, gym_id) => {
-    const member = await Member.findOne({
-      where: { id, gym_id },
-      include: [{ model: MembershipType, attributes: ['name', 'amount'] }],
-    });
-    if (!member) throw new Error('Member not found');
-
-    const planName = member.MembershipType ? member.MembershipType.name : (member.is_trial ? 'Free Trial' : 'No Plan');
-    const planAmount = member.MembershipType ? `₹${member.MembershipType.amount}` : '₹0.00';
-
-    return {
-      join_date: member.join_date,
-      total_visits: member.total_visits,
-      lifetime_value: member.lifetime_value,
-      status: member.status,
-      last_arrival: member.last_arrival,
-      plan_badge: `${planName} - ${planAmount}`
-    };
+    const plain = member.toJSON();
+    plain.status = getEffectiveStatus(plain);
+    return plain;
   },
 
   // Renew membership (blocks renewal if not expiring within 30 days — ERPNext logic)
   renewMembership: async (id, gym_id, membership_type_id) => {
     const member = await Member.findOne({ where: { id, gym_id } });
     if (!member) throw new Error('Member not found');
+    const wasTrialConversion = member.is_trial;
 
-    if (!isExpiringWithin30Days(member.expiry_date)) {
+    // Skip expiry check for trial members — they can convert anytime.
+    // However, if already active and not a trial, enforce the 30-day renewal rule.
+    if (!member.is_trial && member.status === 'active' && !isExpiringWithin30Days(member.expiry_date)) {
       throw new Error('Membership cannot be renewed — not expiring within 30 days');
     }
 
     const membershipType = await MembershipType.findByPk(membership_type_id);
     if (!membershipType) throw new Error('Invalid membership type');
 
-    const newExpiry = calculateExpiryDate(new Date(), membershipType.duration_months);
+    const newExpiry = calculateExpiryDate(dayjs.utc().toDate(), membershipType.duration_months);
 
     await member.update({
       membership_type_id,
@@ -209,6 +308,15 @@ const memberService = {
       payment_collected: true,
       last_payment_date: dayjs.utc().toDate(),
       lifetime_value: member.lifetime_value + membershipType.amount
+    });
+
+    await Payment.create({
+      gym_id,
+      member_id: member.id,
+      amount: membershipType.amount,
+      status: 'paid',
+      payment_date: dayjs.utc().toDate(),
+      method: wasTrialConversion ? 'trial_conversion' : 'renewal'
     });
 
     // Clear old reminders and setup new ones
@@ -243,7 +351,17 @@ const memberService = {
     const member = await Member.findOne({ where: { id, gym_id } });
     if (!member) throw new Error('Member not found');
     if (data.email && !validateEmail(data.email)) throw new Error('Invalid email format');
-    await member.update(data);
+
+    const allowed = ['member_name', 'phone', 'email', 'membership_type_id', 'notes'];
+    const updates = {};
+    for (const key of allowed) {
+      if (data[key] !== undefined) updates[key] = data[key];
+    }
+    if (updates.member_name) {
+      updates.avatar = updates.member_name.trim().charAt(0).toUpperCase();
+    }
+
+    await member.update(updates);
     return member;
   },
 
@@ -255,13 +373,27 @@ const memberService = {
     return { message: 'Member deleted successfully' };
   },
 
-  // Get all membership types
+  // Get all membership types — seeds defaults if gym has none
   getMembershipTypes: async (gymId) => {
-    // BUG 5 FIX: Added gymId parameter and where clause for isolation
-    return await MembershipType.findAll({ 
+    let types = await MembershipType.findAll({
       where: { gym_id: gymId },
-      order: [['amount', 'ASC']] 
+      order: [['amount', 'ASC']]
     });
+
+    if (types.length === 0) {
+      await MembershipType.bulkCreate([
+        { gym_id: gymId, name: '1 Month',  amount: 1000, duration_months: 1  },
+        { gym_id: gymId, name: '3 Months', amount: 2500, duration_months: 3  },
+        { gym_id: gymId, name: '12 Months',amount: 8000, duration_months: 12 },
+      ], { ignoreDuplicates: true });
+
+      types = await MembershipType.findAll({
+        where: { gym_id: gymId },
+        order: [['amount', 'ASC']]
+      });
+    }
+
+    return types;
   },
 
   // Auto-expire members whose expiry date has passed (run as a cron job)
@@ -269,7 +401,10 @@ const memberService = {
     // BUG 1 FIX: Use dayjs.utc()
     const today = dayjs.utc().format('YYYY-MM-DD');
     const updated = await Member.update(
-      { status: 'expired' },
+      {
+        status: 'expired',
+        payment_collected: false,
+      },
       {
         where: {
           expiry_date: { [Op.lt]: today },
@@ -283,8 +418,21 @@ const memberService = {
   // --- Payment Operations ---
 
   // Get members with payment-specific attributes for audit view
-  getPaymentSummaries: async (gym_id, expiry_filter = null) => {
-    const where = { gym_id };
+  getPaymentSummaries: async (gym_id, expiry_filter = null, paid = false) => {
+    const todayStr = dayjs.utc().startOf('day').format('YYYY-MM-DD');
+
+    const where = paid
+      ? { gym_id, payment_collected: true }
+      : {
+          gym_id,
+          payment_collected: false,
+          // Exclude ongoing trials — nothing to collect yet.
+          // Only overdue trials (expiry_date < today) appear in the unpaid queue.
+          [Op.or]: [
+            { status: { [Op.ne]: 'trial' } },
+            { expiry_date: { [Op.lt]: todayStr } },
+          ],
+        };
 
     if (expiry_filter) {
       const todayStart = dayjs.utc().startOf('day');
@@ -301,11 +449,10 @@ const memberService = {
         };
       } else if (expiry_filter === 'overdue') {
         where.expiry_date = { [Op.lt]: todayStart.format('YYYY-MM-DD') };
-        where.payment_collected = false;
       }
     }
 
-    return await Member.findAll({
+    const members = await Member.findAll({
       where,
       attributes: [
         'id',
@@ -315,18 +462,21 @@ const memberService = {
         'last_payment_date',
         'lifetime_value',
         'expiry_date',
-        'status'
+        'status',
+        'join_date'
       ],
       include: [{
         model: MembershipType,
-        attributes: ['name', 'amount'],
+        attributes: ['name', 'amount', 'duration_months'],
         required: false
       }],
       order: [['payment_collected', 'ASC'], ['member_name', 'ASC']]
     });
+
+    return members.map(buildPaymentSummaryViewModel);
   },
 
-  // Idempotent payment recording: set collected=true and increment lifetime_value
+  // Idempotent payment recording: set collected=true, increment LTV, and reactivate if expired
   processPaymentReceived: async (gym_id, member_id) => {
     const member = await Member.findOne({
       where: { id: member_id, gym_id },
@@ -335,14 +485,12 @@ const memberService = {
 
     if (!member) throw new Error('Member not found');
 
-    // If already marked as collected, return early (idempotent)
     if (member.payment_collected) {
       return member;
     }
 
     const planAmount = member.MembershipType ? member.MembershipType.amount : 0;
-    
-    // Create new Payment record for audit
+
     await Payment.create({
       gym_id,
       member_id,
@@ -351,14 +499,86 @@ const memberService = {
       payment_date: dayjs.utc().toDate(),
     });
 
-    await member.update({
+    const isExpired = member.status === 'expired' ||
+      (member.expiry_date && dayjs.utc(member.expiry_date).isBefore(dayjs.utc()));
+
+    const updates = {
       payment_collected: true,
       last_payment_date: dayjs.utc().toDate(),
-      lifetime_value: member.lifetime_value + planAmount
+      lifetime_value: member.lifetime_value + planAmount,
+    };
+
+    // Reactivate and extend expiry from today when marking an expired member as paid
+    if (isExpired && member.MembershipType) {
+      updates.status = 'active';
+      updates.expiry_date = dayjs.utc().add(member.MembershipType.duration_months, 'month').toDate();
+    }
+
+    await member.update(updates);
+    return member;
+  },
+
+  // Member growth: last 3 months enrollments + current status breakdown
+  getMemberGrowth: async (gym_id) => {
+    const monthly = [];
+    for (let i = 2; i >= 0; i--) {
+      const monthStart = dayjs.utc().subtract(i, 'month').startOf('month');
+      const monthEnd = dayjs.utc().subtract(i, 'month').endOf('month');
+      const count = await Member.count({
+        where: {
+          gym_id,
+          join_date: { [Op.between]: [monthStart.toDate(), monthEnd.toDate()] }
+        }
+      });
+      monthly.push({
+        month: monthStart.format('MMM YYYY'),
+        month_short: monthStart.format('MMM'),
+        new_members: count,
+      });
+    }
+
+    const inactiveThreshold = dayjs.utc().subtract(30, 'day').startOf('day').toDate();
+    const [total, active, trial, expired, inactive, nonTrialMembers] = await Promise.all([
+      Member.count({ where: { gym_id } }),
+      Member.count({ where: { gym_id, status: 'active' } }),
+      Member.count({ where: { gym_id, status: 'trial' } }),
+      Member.count({ where: { gym_id, status: 'expired', expiry_date: { [Op.gte]: inactiveThreshold } } }),
+      Member.count({ where: { gym_id, status: 'expired', expiry_date: { [Op.lt]: inactiveThreshold } } }),
+      Member.findAll({
+        where: { gym_id, is_trial: false },
+        attributes: ['lifetime_value'],
+        include: [{ model: MembershipType, attributes: ['amount'], required: false }],
+        raw: true,
+        nest: true,
+      }),
+    ]);
+
+    // For each paid member: use lifetime_value if payments were tracked,
+    // otherwise use the plan amount as the minimum expected value.
+    const totalLtv = nonTrialMembers.reduce((sum, m) => {
+      const lv = parseFloat(m.lifetime_value) || 0;
+      const planAmt = m.MembershipType ? parseFloat(m.MembershipType.amount) || 0 : 0;
+      return sum + (lv > planAmt ? lv : planAmt);
+    }, 0);
+
+    return { monthly, totals: { total, active, trial, expired, inactive, total_ltv: totalLtv } };
+  },
+
+  // Total payments collected in the current calendar month
+  getMonthlyStats: async (gym_id) => {
+    const startOfMonth = dayjs.utc().startOf('month').toDate();
+    const endOfMonth = dayjs.utc().endOf('month').toDate();
+
+    const monthlyCollected = await Payment.sum('amount', {
+      where: {
+        gym_id,
+        status: 'paid',
+        payment_date: { [Op.between]: [startOfMonth, endOfMonth] },
+      },
     });
 
-    return member;
-  }
+    return { monthly_collected: monthlyCollected || 0 };
+  },
 };
 
 module.exports = memberService;

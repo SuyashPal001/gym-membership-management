@@ -22,6 +22,7 @@
 * **[DECIDED]** GET /members/:gym_id validates UUIDs and Enum values (status, expiring_in) at route level — returns 400 for malformed input, 500 for unexpected server errors only.
 * **[DECIDED]** GET /members/:gym_id supports 3 optional filters: `status`, `membership_type_id`, and `expiring_in` (today, this_week, this_month), using `dayjs.utc()` rolling 7/30 day windows for consistent filtering.
 * **[DECIDED]** GET /api/payments/:gym_id supports `expiry_filter` (today, this_week, overdue) with route-level validation to identify upcoming and outstanding payments without affecting standard member rosters.
+* **[DECIDED]** Collect page excludes trial members whose trial is still active — only trial-overdue members appear. Enforced at both the DB query level (`getPaymentSummaries` adds `Op.or: [status != 'trial', expiry_date < today]`) and the Flutter `displayList` filter as a redundant guard. Ongoing trial members have no payment obligation yet; only expired trials need conversion follow-up.
 * **[DECIDED]** Implement a logical delete pattern for task cancellations. Setting `cancelled: true` on `WorkflowReminder` ensures we maintain a full audit trail of scheduled communication while safely removing records from active polling intervals.
 * **[DECIDED]** Compute `paid_after_reminder` by comparing `Member.last_payment_date` against `WorkflowReminder.scheduled_date`. This provides an absolute 'conversion' signal without complex state machine tracking during actual payment settlement.
 * **[DECIDED]** Manual reminder triggers must flow through the database queue rather than calling providers directly. By inserting a `WorkflowReminder` set for 'now', we maintain a single execution bottleneck (the cron), preventing duplicate logic and ensuring all outgoing traffic is logged in PG.
@@ -86,6 +87,8 @@
 * **[DECIDED]** buildSystemPrompt(ownerName) replaces static SYSTEM_PROMPT string. Owner name injected dynamically into Flexy greeting on every session start.
 * **[COMPLETED]** Hardcoded gym_id UUID '550e8400-e29b-41d4-a716-446655440000' removed from api_config.dart. gym_id now read from SharedPreferences populated by /api/auth/setup response. cognito_sub column added to Gym model. seed.js and Bruno tests retain UUID for dev use only.
 * **[BACKLOG]** Gym logo/avatar upload feature. Owner should be able to upload gym logo from profile screen avatar tap. Needs: image_picker Flutter package, multipart POST endpoint /api/gym/:gym_id/avatar, Express static serving for /uploads/avatars/, avatar_url column on Gym model, avatar displayed in profile and home screen top bar. Do not build until auth feature is complete.
+
+* **[BACKLOG]** QR Code self-service check-in for members. Member scans a QR code displayed on owner's phone/tablet, opens a web page, types their phone number, system checks them in via POST /api/attendance/scan. Requires: deployed public backend URL, a static QR generator pointing to that URL, a lightweight public HTML page (no auth) that calls the scan endpoint with gym_id as a URL param. Do not build until backend is deployed to production.
 ---
 
 ## Removed Modules (Post-Stable Migration)

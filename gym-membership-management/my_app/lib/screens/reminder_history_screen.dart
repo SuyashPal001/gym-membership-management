@@ -55,11 +55,12 @@ class _ReminderHistoryScreenState extends State<ReminderHistoryScreen> {
     return Scaffold(
       backgroundColor: AppColors.background,
       appBar: AppBar(
-        title: Text("Reminder History", style: TextStyle(color: AppColors.primaryText, fontWeight: FontWeight.bold)),
+        title: const Text("REMINDER HISTORY", style: TextStyle(fontSize: 14, fontWeight: FontWeight.w900, letterSpacing: 1.5, color: Colors.white)),
         backgroundColor: Colors.transparent,
         elevation: 0,
+        centerTitle: true,
         leading: IconButton(
-          icon: Icon(Icons.arrow_back_ios, color: AppColors.primaryText),
+          icon: const Icon(Icons.arrow_back_ios, color: Colors.white, size: 18),
           onPressed: () => Navigator.pop(context),
         ),
       ),

@@ -7,7 +7,6 @@ class AttendanceSession {
   final String date;
   final int? durationMinutes;
   final String? memberName;
-  final String? avatar;
 
   AttendanceSession({
     required this.id,
@@ -18,7 +17,6 @@ class AttendanceSession {
     required this.date,
     this.durationMinutes,
     this.memberName,
-    this.avatar,
   });
 
   factory AttendanceSession.fromJson(Map<String, dynamic> json) {
@@ -31,7 +29,6 @@ class AttendanceSession {
       date: json['date'],
       durationMinutes: json['duration_minutes'],
       memberName: json['Member']?['member_name'],
-      avatar: json['Member']?['avatar'],
     );
   }
 }

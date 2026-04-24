@@ -36,11 +36,11 @@ class FeaturedCard extends StatelessWidget {
                   width: 8,
                   height: 8,
                   decoration: BoxDecoration(
-                    color: Colors.greenAccent,
+                    color: AppColors.success,
                     shape: BoxShape.circle,
                     boxShadow: [
                       BoxShadow(
-                        color: Colors.greenAccent.withOpacity(0.4),
+                        color: AppColors.success.withOpacity(0.4),
                         blurRadius: 4,
                         spreadRadius: 2,
                       )
@@ -72,7 +72,7 @@ class FeaturedCard extends StatelessWidget {
                   ),
                   style: ElevatedButton.styleFrom(
                     backgroundColor: AppColors.accent,
-                    foregroundColor: Colors.white,
+                    foregroundColor: Colors.black,
                     padding: EdgeInsets.symmetric(horizontal: 20, vertical: 12),
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(24),

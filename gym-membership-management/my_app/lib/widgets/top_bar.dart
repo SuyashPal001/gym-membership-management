@@ -1,86 +1,123 @@
 import 'package:flutter/material.dart';
+import 'package:google_fonts/google_fonts.dart';
 import '../constants/app_colors.dart';
-import '../services/auth_service.dart';
-import '../screens/login_screen.dart';
-import 'api_server_dialog.dart';
+import '../screens/profile_screen.dart';
 
 class TopBar extends StatelessWidget {
   final String? name;
-  
-  const TopBar({Key? key, this.name}) : super(key: key);
+  final bool isFirstVisit;
+
+  const TopBar({Key? key, this.name, this.isFirstVisit = false}) : super(key: key);
 
   @override
   Widget build(BuildContext context) {
-    final displayName = name ?? 'Owner';
+    // PRESTIGE: No fallback text while loading to prevent "Studio Owner" flash
+    final displayName = name ?? '';
     
-    final hour = DateTime.now().hour;
-    String greeting = 'Good Morning';
-    if (hour >= 12 && hour < 17) {
-      greeting = 'Good Afternoon';
-    } else if (hour >= 17 || hour < 5) {
-      greeting = 'Good Evening';
-    }
-
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 20.0, vertical: 10.0),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          Text(
-            '$greeting, $displayName 👋',
-            style: TextStyle(
-              color: AppColors.primaryText,
-              fontSize: 22,
-              fontWeight: FontWeight.bold,
-            ),
+      padding: const EdgeInsets.fromLTRB(20.0, 40.0, 20.0, 10.0),
+      child: GestureDetector(
+        onTap: () => Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => ProfileScreen(onBack: () => Navigator.pop(context)),
           ),
-          Row(
-            mainAxisSize: MainAxisSize.min,
+        ),
+        child: Container(
+          color: Colors.transparent, 
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
             children: [
-              IconButton(
-                tooltip: 'API server',
-                onPressed: () => showApiServerDialog(context),
-                style: IconButton.styleFrom(
-                  backgroundColor: AppColors.cardBackground,
-                  foregroundColor: AppColors.primaryText,
-                ),
-                icon: Icon(Icons.dns, size: 22),
+              // Liquid Gold Avatar Core
+              Stack(
+                alignment: Alignment.center,
+                children: [
+                  Container(
+                    width: 56, height: 56,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      border: Border.all(color: AppColors.primaryBlue.withOpacity(0.12), width: 1),
+                    ),
+                  ),
+                  Container(
+                    width: 48, height: 48,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      gradient: LinearGradient(
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                        colors: [
+                          AppColors.primaryBlue.withOpacity(0.15),
+                          AppColors.background,
+                        ],
+                      ),
+                      border: Border.all(color: AppColors.primaryBlue.withOpacity(0.25), width: 1),
+                    ),
+                    child: Center(
+                      child: ShaderMask(
+                        shaderCallback: (bounds) => LinearGradient(
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                          colors: [
+                            Colors.white,
+                            AppColors.primaryBlue,
+                          ],
+                        ).createShader(bounds),
+                        child: const Icon(
+                          Icons.fitness_center_rounded,
+                          size: 22,
+                          color: Colors.white,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
               ),
-              SizedBox(width: 8),
-              IconButton(
-                tooltip: 'Sign Out',
-                onPressed: () async {
-                  await AuthService.signOut();
-                  if (context.mounted) {
-                    Navigator.pushAndRemoveUntil(
-                      context,
-                      MaterialPageRoute(builder: (_) => const LoginScreen()),
-                      (route) => false,
-                    );
-                  }
-                },
-                style: IconButton.styleFrom(
-                  backgroundColor: AppColors.cardBackground,
-                  foregroundColor: Colors.redAccent,
+              const SizedBox(width: 9), // PRECISION: 9px for ultra-tight density
+              // Greeting Column
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      isFirstVisit ? 'Welcome,' : 'Welcome back,',
+                      style: GoogleFonts.outfit(
+                        color: Colors.white.withOpacity(0.6), // CALIBRATED: Balanced visibility
+                        fontSize: 15,
+                        fontWeight: FontWeight.w400,
+                        letterSpacing: 0.1,
+                        height: 1.1,
+                      ),
+                    ),
+                    if (displayName.isNotEmpty)
+                      ShaderMask(
+                        shaderCallback: (bounds) => LinearGradient(
+                          colors: [Colors.white, Colors.white.withOpacity(0.9), AppColors.primaryBlue.withOpacity(0.8)],
+                          stops: const [0.0, 0.4, 1.0],
+                        ).createShader(bounds),
+                        child: Text(
+                          displayName.toUpperCase(),
+                          style: GoogleFonts.outfit(
+                            color: Colors.white,
+                            fontSize: 20,
+                            fontWeight: FontWeight.w900,
+                            letterSpacing: -0.5,
+                            height: 1.1, // Clean stacking
+                          ),
+                        ),
+                      ),
+                  ],
                 ),
-                icon: Icon(Icons.logout, size: 22),
               ),
-              SizedBox(width: 8),
-              Container(
-                padding: EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  color: AppColors.cardBackground,
-                  shape: BoxShape.circle,
-                ),
-                child: Icon(
-                  Icons.notifications_none,
-                  color: AppColors.primaryText,
-                  size: 24,
-                ),
+              Icon(
+                Icons.arrow_forward_ios_rounded,
+                size: 14,
+                color: Colors.white.withOpacity(0.08),
               ),
             ],
           ),
-        ],
+        ),
       ),
     );
   }

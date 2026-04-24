@@ -1,17 +1,34 @@
-import 'dart:convert';
 import 'package:flutter/material.dart';
-import 'package:image_picker/image_picker.dart';
+import 'package:lottie/lottie.dart';
 import 'package:intl/intl.dart';
+import 'package:google_fonts/google_fonts.dart';
 import '../models/member.dart';
-import '../models/crm_models.dart';
 import '../models/reminder_models.dart';
 import '../models/attendance_summary.dart';
 import '../services/api_exception.dart';
 import '../services/api_service.dart';
-import '../utils/member_avatar.dart';
 import '../constants/app_colors.dart';
 import 'reminder_history_screen.dart';
 import 'attendance_history_screen.dart';
+
+String _planLabel(Member? member) {
+  if (member == null) return '—';
+  if (member.isTrial || member.status == 'trial') {
+    if (member.expiryDate != null) {
+      final exp = DateTime.tryParse(member.expiryDate!);
+      if (exp != null) {
+        final today = DateTime.now();
+        final todayDate = DateTime(today.year, today.month, today.day);
+        final expDate = DateTime(exp.year, exp.month, exp.day);
+        final diff = expDate.difference(todayDate).inDays;
+        if (diff < 0) return 'Trial Overdue by ${diff.abs()} days';
+      }
+    }
+    return 'Ongoing Trial';
+  }
+  if (member.membershipType == null) return '—';
+  return '${member.membershipType!.durationMonths} Month';
+}
 
 class MemberDetailScreen extends StatefulWidget {
   final String memberName;
@@ -26,448 +43,426 @@ class MemberDetailScreen extends StatefulWidget {
 class _MemberDetailScreenState extends State<MemberDetailScreen> {
   String get _memberId => widget.member?.id ?? '';
 
-  MemberStats? _stats;
   AttendanceSummary? _attendanceSummary;
-  String? _statsError;
-  ImageProvider? _avatarImage;
+  List<ReminderHistory>? _reminders;
   bool _isLoading = true;
-  List<ReminderHistory> _reminderHistory = [];
-
-  // Colors based on user specs
-  static const Color bgColor = AppColors.background;
-  static const Color accentColor = AppColors.accent;
-  static const Color cardColor = AppColors.cardBackground;
+  String? _error;
 
   @override
   void initState() {
     super.initState();
-    _avatarImage = memberAvatarImageProvider(widget.member?.image);
-    _loadData();
+    _loadAllData();
   }
 
-  Future<void> _loadData() async {
-    if (_memberId.isEmpty) {
-      if (mounted) setState(() { _isLoading = false; _statsError = 'Missing member id'; });
-      return;
-    }
-    setState(() { _isLoading = true; _statsError = null; });
-
-    // Fetch in parallel for better performance
-    await Future.wait([
-      ApiService.fetchMemberStats(_memberId).then((res) => _stats = res).catchError((e) { _statsError = e.toString(); return MemberStats.empty(); }),
-      ApiService.fetchReminderHistory(_memberId).then((res) => _reminderHistory = res).catchError((_) => _reminderHistory = []),
-      ApiService.fetchMemberAttendanceSummary(_memberId).then((res) => _attendanceSummary = res).catchError((_) { _attendanceSummary = null; return null; }),
-    ]);
-
-    print('Stats loaded: $_stats');
-    print('Reminder history count: ${_reminderHistory.length}');
-
-    if (mounted) setState(() { _isLoading = false; });
-  }
-
-  String _getTimeAgo(String dateStr) {
-    if (dateStr.isEmpty) return "";
+  Future<void> _loadAllData() async {
+    setState(() => _isLoading = true);
     try {
-      final dt = DateTime.parse(dateStr).toLocal();
-      final diff = DateTime.now().difference(dt);
-      if (diff.inDays >= 7) return "${(diff.inDays / 7).floor()}w ago";
-      if (diff.inDays >= 1) return "${diff.inDays}d ago";
-      if (diff.inHours >= 1) return "${diff.inHours}h ago";
-      if (diff.inMinutes >= 1) return "${diff.inMinutes}m ago";
-      return "Just now";
-    } catch (_) {
-      return "";
-    }
-  }
-
-  Future<void> _triggerQuickReminder(String method) async {
-    try {
-      await ApiService.postReminder(_memberId, method);
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('$method Reminder scheduled'), backgroundColor: accentColor),
-      );
-      // Refresh history to show the new one (as scheduled: false in DB it might not show in history yet, but service query depends on scheduled: true)
-      _loadData();
-    } on ApiException catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(e.message), backgroundColor: Colors.red),
-      );
-    }
-  }
-
-  Future<void> _uploadAvatar() async {
-    if (_memberId.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Cannot upload: missing member id'), backgroundColor: Colors.red),
-      );
-      return;
-    }
-    final picker = ImagePicker();
-    final XFile? file = await picker.pickImage(
-      source: ImageSource.gallery,
-      maxWidth: 1200,
-      imageQuality: 85,
-    );
-    if (file == null) return;
-    try {
-      setState(() => _isLoading = true);
-      final bytes = await file.readAsBytes();
-      final base64 = base64Encode(bytes);
-      
-      final res = await ApiService.uploadAvatar(_memberId, base64);
-      final String? url = res['url'] ?? res['avatar'];
-      
-      if (!mounted) return;
+      final results = await Future.wait([
+        ApiService.fetchMemberAttendanceSummary(_memberId),
+        ApiService.fetchReminderHistory(_memberId),
+      ]);
       setState(() {
-        _avatarImage = memberAvatarImageProvider(url);
-        _isLoading = false;
+        _attendanceSummary = results[0] as AttendanceSummary;
+        _reminders = results[1] as List<ReminderHistory>;
+        _error = null;
       });
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Photo updated'), backgroundColor: accentColor),
-      );
-    } on ApiException catch (e) {
-      if (!mounted) return;
+    } catch (e) {
+      setState(() => _error = e.toString());
+    } finally {
       setState(() => _isLoading = false);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(e.message), backgroundColor: Colors.red),
-      );
     }
   }
 
-  Future<void> _scheduleReminder(String method) async {
-    print('TAPPED TRIGGERED: $method');
-    final DateTime? pickedDate = await showDatePicker(
-      context: context,
-      initialDate: DateTime.now(),
-      firstDate: DateTime.now(),
-      lastDate: DateTime.now().add(Duration(days: 365)),
-      builder: (context, child) {
-        return Theme(
-          data: ThemeData.dark().copyWith(
-            colorScheme: ColorScheme.dark(primary: accentColor, surface: cardColor),
-          ),
-          child: child!,
-        );
-      },
-    );
+  // ─── Actions ───────────────────────────────────────────────────────────────
 
-    if (pickedDate != null) {
-      if (!mounted) return;
-      final TimeOfDay? pickedTime = await showTimePicker(
-        context: context,
-        initialTime: TimeOfDay.now(),
-        builder: (context, child) {
-          return Theme(
-            data: ThemeData.dark().copyWith(
-              colorScheme: ColorScheme.dark(primary: accentColor, surface: cardColor),
+  void _showSnackbar(String msg, Color color) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Row(
+          children: [
+            Icon(Icons.info_outline, color: color, size: 20),
+            SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                msg,
+                style: TextStyle(
+                  color: AppColors.primaryText,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
             ),
-            child: child!,
+          ],
+        ),
+        backgroundColor: AppColors.cardBackground,
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(12),
+          side: BorderSide(color: AppColors.border),
+        ),
+        margin: EdgeInsets.all(20),
+        duration: Duration(seconds: 3),
+      ),
+    );
+  }
+
+  Future<void> _handleRenew() async {
+    try {
+      final plans = await ApiService.fetchMembershipTypes();
+      if (!mounted) return;
+
+      final selectedPlan = await showModalBottomSheet<MembershipType>(
+        context: context,
+        backgroundColor: AppColors.background,
+        isScrollControlled: true,
+        shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
+        builder: (ctx) {
+          MembershipType? picked;
+          return StatefulBuilder(
+            builder: (ctx, setSheet) => Padding(
+              padding: EdgeInsets.fromLTRB(20, 20, 20, MediaQuery.of(ctx).viewInsets.bottom + 32),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Center(child: Container(width: 32, height: 4, decoration: BoxDecoration(color: Colors.white12, borderRadius: BorderRadius.circular(2)))),
+                  const SizedBox(height: 20),
+                  Padding(
+                    padding: const EdgeInsets.only(left: 8),
+                    child: Text("SELECT RENEWAL PLAN", style: GoogleFonts.outfit(color: AppColors.secondaryText, fontSize: 11, fontWeight: FontWeight.w900, letterSpacing: 1.5)),
+                  ),
+                  const SizedBox(height: 16),
+                  ...plans.map((p) {
+                    final sel = picked?.id == p.id;
+                    IconData getPlanIcon(String name) {
+                      final n = name.toLowerCase();
+                      if (n.contains('12') || n.contains('year') || n.contains('annual')) return Icons.workspace_premium_rounded;
+                      if (n.contains('6') || n.contains('half')) return Icons.stars_rounded;
+                      if (n.contains('3') || n.contains('quarter')) return Icons.bolt_rounded;
+                      return Icons.fitness_center_rounded;
+                    }
+                    return GestureDetector(
+                      onTap: () => setSheet(() => picked = p),
+                      child: AnimatedContainer(
+                        duration: const Duration(milliseconds: 200),
+                        margin: const EdgeInsets.only(bottom: 12),
+                        padding: const EdgeInsets.all(16),
+                        decoration: BoxDecoration(
+                          color: sel ? AppColors.primaryBlue.withOpacity(0.08) : AppColors.cardBackground.withOpacity(0.6),
+                          borderRadius: BorderRadius.circular(24),
+                          border: Border.all(color: sel ? AppColors.primaryBlue.withOpacity(0.5) : Colors.white.withOpacity(0.06), width: 1),
+                        ),
+                        child: Row(
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.all(10),
+                              decoration: BoxDecoration(color: AppColors.primaryBlue.withOpacity(0.1), borderRadius: BorderRadius.circular(14)),
+                              child: Icon(getPlanIcon(p.name), color: AppColors.primaryBlue, size: 20),
+                            ),
+                            const SizedBox(width: 16),
+                            Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                              Text(p.name, style: GoogleFonts.outfit(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 15)),
+                              const SizedBox(height: 2),
+                              Text("₹${p.amount.toInt()} • ${p.durationMonths} Months", style: GoogleFonts.outfit(color: AppColors.secondaryText, fontSize: 12)),
+                            ])),
+                            Icon(sel ? Icons.check_circle_rounded : Icons.radio_button_off_rounded, color: sel ? AppColors.primaryBlue : Colors.white.withOpacity(0.1), size: 22),
+                          ],
+                        ),
+                      ),
+                    );
+                  }).toList(),
+                  const SizedBox(height: 8),
+                  SizedBox(
+                    width: double.infinity,
+                    height: 52,
+                    child: ElevatedButton(
+                      onPressed: picked == null ? null : () => Navigator.pop(ctx, picked),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppColors.accent,
+                        foregroundColor: Colors.black,
+                        disabledBackgroundColor: Colors.white.withOpacity(0.06),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                        elevation: 0,
+                      ),
+                      child: Text("CONFIRM RENEWAL", style: GoogleFonts.outfit(fontWeight: FontWeight.w900, fontSize: 14, letterSpacing: 1.0, color: picked == null ? AppColors.secondaryText : Colors.black)),
+                    ),
+                  ),
+                ],
+              ),
+            ),
           );
         },
       );
 
-      if (pickedTime != null) {
-        final scheduledDate = DateTime(
-          pickedDate.year,
-          pickedDate.month,
-          pickedDate.day,
-          pickedTime.hour,
-          pickedTime.minute,
-        );
+      if (selectedPlan != null) {
+        setState(() => _isLoading = true);
+        await ApiService.renewMembership(_memberId, selectedPlan.id);
+        _showSnackbar("Membership Renewed Successfully!", AppColors.success);
+        _loadAllData();
+      }
+    } catch (e) {
+      _showSnackbar("Renewal failed: $e", AppColors.error);
+      setState(() => _isLoading = false);
+    }
+  }
 
-        // Show a quick dialog for the message or prompt
-        final TextEditingController _msgController = TextEditingController();
-        if (!mounted) return;
-        showDialog(
-          context: context,
-          builder: (context) => AlertDialog(
-            backgroundColor: cardColor,
-            title: Text('Schedule $method', style: TextStyle(color: Colors.white)),
-            content: TextField(
-              controller: _msgController,
-              style: TextStyle(color: Colors.white),
-              decoration: InputDecoration(
-                hintText: method == 'WHATSAPP' ? 'Message...' : 'AI Prompt...',
-                hintStyle: TextStyle(color: Colors.white54)
-              ),
-            ),
-            actions: [
-              TextButton(onPressed: () => Navigator.pop(context), child: Text('Cancel', style: TextStyle(color: Colors.white54))),
-              TextButton(
-                onPressed: () async {
-                  Navigator.pop(context);
-                  try {
-                    await ApiService.createManualReminder(
-                      _memberId,
-                      method,
-                      scheduledDate,
-                      _msgController.text.isNotEmpty ? _msgController.text : "Follow up reminder",
-                    );
-                    if (!mounted) return;
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(
-                        content: Text('$method scheduled for ${scheduledDate.toString()}'),
-                        backgroundColor: accentColor,
-                      ),
-                    );
-                  } on ApiException catch (e) {
-                    if (!mounted) return;
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(content: Text(e.message), backgroundColor: Colors.red),
-                    );
-                  }
-                },
-                child: Text('Schedule', style: TextStyle(color: accentColor)),
-              )
-            ],
-          )
-        );
+  Future<void> _handleRemind(String method) async {
+    try {
+      await ApiService.postReminder(_memberId, method);
+      _showSnackbar("${method.toUpperCase()} reminder sent!", AppColors.primaryBlue);
+      _loadAllData();
+    } catch (e) {
+      _showSnackbar("Failed to send reminder: $e", AppColors.error);
+    }
+  }
+
+  Future<void> _showDeleteConfirmation() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: AppColors.cardBackground,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Text("Delete Member", style: TextStyle(color: AppColors.primaryText, fontWeight: FontWeight.bold)),
+        content: Text("Remove ${widget.memberName} permanently?"),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context, false), child: Text("CANCEL", style: TextStyle(color: AppColors.secondaryText))),
+          TextButton(onPressed: () => Navigator.pop(context, true), child: Text("DELETE", style: TextStyle(color: AppColors.error))),
+        ],
+      ),
+    );
+    if (confirmed == true) {
+      try {
+        await ApiService.deleteMember(_memberId);
+        Navigator.pop(context, true);
+      } catch (e) {
+        _showSnackbar("Error deleting member: $e", AppColors.error);
       }
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    if (_isLoading) {
-      return Scaffold(
-        backgroundColor: bgColor,
-        appBar: AppBar(backgroundColor: Colors.transparent, elevation: 0),
-        body: Center(child: CircularProgressIndicator(color: accentColor)),
-      );
-    }
-
-    // Safely unwrap stats
-    final joinDate = _stats?.joinDate ?? "N/A";
-    final totalVisits = _stats?.totalVisits ?? 0;
-    final ltv = _stats?.lifetimeValue ?? 0.0;
-    final lastArrival = _stats?.lastArrival ?? "N/A";
-    final planBadge = _stats?.planBadge ?? "No Plan - ₹0.00";
-    final status = _stats?.status.toUpperCase() ?? "UNKNOWN";
-    final isExpired = status == "EXPIRED";
-
     return Scaffold(
-      backgroundColor: bgColor,
+      backgroundColor: AppColors.background,
       appBar: AppBar(
         backgroundColor: Colors.transparent,
         elevation: 0,
         leading: IconButton(
-          icon: const Icon(
-            Icons.arrow_back_ios,
-            color: Colors.white,
-            size: 18,
-          ),
-          onPressed: () => Navigator.of(context).pop(),
+          icon: const Icon(Icons.arrow_back_ios, color: Colors.white, size: 18),
+          onPressed: () => Navigator.pop(context),
         ),
+        title: const Text("PROFILE", style: TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.w900, letterSpacing: 1.5)),
+        centerTitle: true,
         actions: [
-          IconButton(
-            icon: Icon(Icons.refresh, color: Colors.white54),
-            onPressed: _loadData,
-          )
+          PopupMenuButton<String>(
+            icon: Icon(Icons.more_horiz, color: AppColors.primaryText),
+            color: AppColors.cardBackground,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            onSelected: (val) { if (val == 'delete') _showDeleteConfirmation(); },
+            itemBuilder: (context) => [
+              PopupMenuItem(
+                value: 'delete',
+                child: Row(children: [Icon(Icons.delete_outline, color: AppColors.error, size: 18), SizedBox(width: 8), Text("DELETE MEMBER", style: TextStyle(color: AppColors.error, fontSize: 10, fontWeight: FontWeight.w900))]),
+              ),
+            ],
+          ),
         ],
       ),
-      body: RefreshIndicator(
-        onRefresh: _loadData,
-        color: accentColor,
-        backgroundColor: cardColor,
-        child: SingleChildScrollView(
-          physics: const AlwaysScrollableScrollPhysics(),
+      body: _error != null ? Center(child: Text(_error!, style: TextStyle(color: Colors.white))) : _buildContent(),
+    );
+  }
+
+  Widget _buildContent() {
+    return RefreshIndicator(
+      onRefresh: _loadAllData,
+      color: AppColors.primaryBlue,
+      child: ListView(
+        physics: AlwaysScrollableScrollPhysics(),
+        padding: EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+        children: [
+          _buildHeroHeader(),
+          SizedBox(height: 32),
+          _buildActionPanel(),
+          SizedBox(height: 32),
+          _buildQuickStats(),
+          SizedBox(height: 40),
+          _buildSectionHeader("MEMBERSHIP & BILLING"),
+          _buildMembershipInfo(),
+          SizedBox(height: 32),
+          _buildSectionHeader("ATTENDANCE INSIGHTS"),
+          _buildAttendanceCard(),
+          SizedBox(height: 32),
+          _buildSectionHeader("COMMUNICATION LOG"),
+          _buildReminderHistoryCard(),
+          SizedBox(height: 60),
+        ],
+      ),
+    );
+  }
+
+  bool get _isExpired {
+    final status = widget.member?.status ?? '';
+    if (status == 'inactive') return true;
+    final expiryStr = widget.member?.expiryDate;
+    if (expiryStr == null) return false;
+    final expiry = DateTime.tryParse(expiryStr);
+    if (expiry == null) return false;
+    final today = DateTime.now();
+    final todayDate = DateTime(today.year, today.month, today.day);
+    final expiryDate = DateTime(expiry.year, expiry.month, expiry.day);
+    return expiryDate.isBefore(todayDate);
+  }
+
+  String _formatExpiry(String? isoDate) {
+    if (isoDate == null) return '—';
+    final dt = DateTime.tryParse(isoDate);
+    if (dt == null) return isoDate;
+    return DateFormat('dd MMM yyyy').format(dt);
+  }
+
+  Widget _buildHeroHeader() {
+    return Column(
+      children: [
+        Container(
+          width: 100,
+          height: 100,
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              colors: [AppColors.border, AppColors.cardBackground],
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+            ),
+            borderRadius: BorderRadius.circular(30),
+            border: Border.all(color: AppColors.border, width: 2),
+          ),
+          alignment: Alignment.center,
+          child: Text(
+            widget.memberName[0].toUpperCase(),
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 36,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+        ),
+        SizedBox(height: 20),
+        Text(
+          widget.memberName,
+          style: TextStyle(
+            color: Colors.white,
+            fontSize: 28,
+            fontWeight: FontWeight.w800,
+            letterSpacing: -1.0,
+          ),
+        ),
+        SizedBox(height: 8),
+        Builder(builder: (_) {
+          final status = widget.member?.status ?? '';
+          Color badgeColor;
+          switch (status.toLowerCase()) {
+            case 'active':
+              badgeColor = AppColors.emerald;
+              break;
+            case 'trial':
+              badgeColor = AppColors.infoBlue;
+              break;
+            case 'expired':
+              badgeColor = AppColors.error;
+              break;
+            case 'inactive':
+              badgeColor = AppColors.secondaryText;
+              break;
+            default:
+              badgeColor = AppColors.secondaryText;
+          }
+          return Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+            decoration: BoxDecoration(
+              color: badgeColor.withOpacity(0.10),
+              borderRadius: BorderRadius.circular(6),
+            ),
+            child: Text(
+              status.toUpperCase(),
+              style: GoogleFonts.outfit(
+                color: badgeColor,
+                fontSize: 9,
+                fontWeight: FontWeight.w900,
+                letterSpacing: 0.5,
+              ),
+            ),
+          );
+        }),
+      ],
+    );
+  }
+
+  Widget _buildActionPanel() {
+    final bool isTrial = widget.member?.isTrial ?? false;
+    final bool isExpired = _isExpired;
+
+    return Container(
+      padding: EdgeInsets.all(8),
+      decoration: BoxDecoration(
+        color: AppColors.cardBackground,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: AppColors.border),
+      ),
+      child: Row(
+        children: [
+          _buildActionItem(
+            "MESSAGE",
+            Icons.chat_rounded,
+            AppColors.primaryBlue,
+            () => _handleRemind('whatsapp'),
+          ),
+          _buildActionVerticalDivider(),
+          _buildActionItem(
+            "AI CALL",
+            Icons.support_agent_rounded,
+            Colors.purpleAccent,
+            () => _handleRemind('call'),
+          ),
+          if (isTrial || isExpired) ...[
+            _buildActionVerticalDivider(),
+            _buildActionItem(
+              isTrial ? "UPGRADE" : "RENEW",
+              Icons.stars_rounded,
+              AppColors.success,
+              _handleRenew,
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildActionVerticalDivider() {
+    return Container(
+      height: 30,
+      width: 1,
+      color: AppColors.border,
+    );
+  }
+
+  Widget _buildActionItem(String label, IconData icon, Color color, VoidCallback onTap) {
+    return Expanded(
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(12),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 12),
           child: Column(
             children: [
-              SizedBox(height: 20),
-              
-              // --- Avatar & Upload ---
-              Center(
-                child: GestureDetector(
-                  onTap: _uploadAvatar,
-                  child: Stack(
-                    alignment: Alignment.center,
-                    children: [
-                      CircleAvatar(
-                        radius: 50,
-                        backgroundColor: cardColor,
-                        backgroundImage: _avatarImage,
-                        child: _avatarImage == null
-                            ? Text(
-                                widget.memberName.isNotEmpty ? widget.memberName[0] : 'U',
-                                style: TextStyle(
-                                  color: accentColor,
-                                  fontSize: 40,
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              )
-                            : null,
-                      ),
-                      Positioned(
-                        bottom: 0,
-                        right: 0,
-                        child: CircleAvatar(
-                          radius: 16,
-                          backgroundColor: accentColor,
-                          child: Icon(Icons.camera_alt, color: Colors.white, size: 16),
-                        ),
-                      )
-                    ],
-                  ),
-                ),
-              ),
-              SizedBox(height: 16),
-
-              if (_statsError != null)
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 20.0),
-                  child: Text(
-                    _statsError!,
-                    textAlign: TextAlign.center,
-                    style: TextStyle(color: Colors.redAccent, fontSize: 13),
-                  ),
-                ),
-              if (_statsError != null) SizedBox(height: 12),
-
-              // --- Name & Status Chip ---
-              Text(
-                widget.memberName,
-                style: const TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.bold),
-              ),
+              Icon(icon, color: color, size: 22),
               SizedBox(height: 8),
-              Container(
-                padding: EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-                decoration: BoxDecoration(
-                  color: isExpired ? Colors.red.withOpacity(0.1) : accentColor.withOpacity(0.1),
-                  borderRadius: BorderRadius.circular(20),
-                  border: Border.all(color: isExpired ? Colors.red : accentColor),
-                ),
-                child: Text(
-                  status, 
-                  style: TextStyle(color: isExpired ? Colors.red : accentColor, fontWeight: FontWeight.bold)
-                ),
-              ),
-              SizedBox(height: 12),
               Text(
-                planBadge,
-                style: TextStyle(color: Colors.white70, fontSize: 16),
-              ),
-              
-              SizedBox(height: 40),
-              
-              // --- Stats Grid ---
-              // --- Redesigned Stat Cards ---
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 20.0),
-                child: _buildStatCards(),
-              ),
-              
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 20.0, vertical: 12.0),
-                child: Align(
-                  alignment: Alignment.centerRight,
-                  child: GestureDetector(
-                    onTap: () => Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => AttendanceHistoryScreen(
-                          memberId: _memberId,
-                          memberName: widget.member?.memberName ?? '',
-                        ),
-                      ),
-                    ),
-                    child: Text('View Attendance →',
-                        style: TextStyle(color: AppColors.accent, fontSize: 12, fontWeight: FontWeight.w500)),
-                  ),
+                label,
+                style: TextStyle(
+                  color: color,
+                  fontSize: 9,
+                  fontWeight: FontWeight.w900,
+                  letterSpacing: 0.5,
                 ),
               ),
-
-              SizedBox(height: 12),
-
-              // --- Last Reminder Card ---
-              _buildLastReminderCard(),
-
-              SizedBox(height: 24),
-
-              // --- Communication Buttons ---
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 20.0),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: ElevatedButton.icon(
-                        onPressed: () => _triggerQuickReminder('WHATSAPP'),
-                        icon: Icon(Icons.chat, size: 16),
-                        label: Text("WhatsApp", style: TextStyle(fontSize: 14)),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: cardColor,
-                          foregroundColor: Colors.white,
-                          padding: EdgeInsets.symmetric(vertical: 14),
-                          side: BorderSide(color: Colors.white24),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                        ),
-                      ),
-                    ),
-                    SizedBox(width: 15),
-                    Expanded(
-                      child: ElevatedButton.icon(
-                        onPressed: () => _triggerQuickReminder('AI_CALL'),
-                        icon: Icon(Icons.phone, size: 16),
-                        label: Text("AI Call", style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: accentColor,
-                          foregroundColor: Colors.white,
-                          padding: EdgeInsets.symmetric(vertical: 14),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-
-              SizedBox(height: 40),
-
-              // --- Renew Membership Button ---
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 20.0),
-                child: SizedBox(
-                  width: double.infinity,
-                  child: ElevatedButton.icon(
-                    onPressed: () async {
-                      final planId = widget.member?.membershipTypeId;
-                      if (planId == null || planId.isEmpty) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(
-                            content: Text('No membership plan on file to renew with'),
-                            backgroundColor: Colors.orange,
-                          ),
-                        );
-                        return;
-                      }
-                      try {
-                        await ApiService.renewMembership(_memberId, planId);
-                        if (!mounted) return;
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(content: Text('Membership renewed'), backgroundColor: accentColor),
-                        );
-                        _loadData();
-                      } on ApiException catch (e) {
-                        if (!mounted) return;
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(content: Text(e.message), backgroundColor: Colors.red),
-                        );
-                      }
-                    },
-                    icon: Icon(Icons.autorenew),
-                    label: Text("Renew Membership", style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: cardColor,
-                      foregroundColor: accentColor,
-                      side: BorderSide(color: accentColor),
-                      padding: EdgeInsets.symmetric(vertical: 16),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                    ),
-                  ),
-                ),
-              ),
-              SizedBox(height: 40),
             ],
           ),
         ),
@@ -475,161 +470,245 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
     );
   }
 
-  Widget _buildLastReminderCard() {
-    print('Building reminder card. hasReminder: ${_reminderHistory.isNotEmpty}, isLoading: $_isLoading');
+  Widget _buildQuickStats() {
+    return Row(
+      children: [
+        _buildStatTile("TOTAL CHECK-INS", _attendanceSummary?.totalVisits.toString() ?? "0", Icons.bolt_rounded),
+        SizedBox(width: 16),
+        _buildStatTile("LIFE TIME VALUE", "₹${widget.member?.lifetimeValue.toInt() ?? 0}", Icons.account_balance_wallet_rounded),
+      ],
+    );
+  }
 
-    final last = _reminderHistory.isNotEmpty ? _reminderHistory.first : null;
-    final Color borderColor = last == null
-        ? Colors.white24
-        : (last.paidAfterReminder ? AppColors.accent : Colors.redAccent);
+  Widget _buildStatTile(String label, String value, IconData icon) {
+    return Expanded(
+      child: Container(
+        padding: EdgeInsets.all(20),
+        decoration: BoxDecoration(
+          color: AppColors.cardBackground,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: AppColors.border),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Icon(icon, color: AppColors.primaryBlue, size: 20),
+            SizedBox(height: 16),
+            Text(
+              value,
+              style: TextStyle(
+                color: Colors.white,
+                fontSize: 22,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+            SizedBox(height: 4),
+            Text(
+              label,
+              style: TextStyle(
+                color: AppColors.secondaryText,
+                fontSize: 10,
+                fontWeight: FontWeight.bold,
+                letterSpacing: 0.5,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 
+  Widget _buildSectionHeader(String title) {
+    return Padding(
+      padding: const EdgeInsets.only(left: 4, bottom: 16.0),
+      child: Text(
+        title,
+        style: TextStyle(
+          color: AppColors.secondaryText,
+          fontSize: 11,
+          fontWeight: FontWeight.w900,
+          letterSpacing: 1.5,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildMembershipInfo() {
     return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 20),
       decoration: BoxDecoration(
         color: AppColors.cardBackground,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: Colors.white12, width: 1),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: AppColors.border),
       ),
-      clipBehavior: Clip.antiAlias, // Ensures the left-strip rounds correctly
-      child: Stack(
+      child: Column(
         children: [
-          // 4px Accent Strip on the LEFT
-          Positioned(
-            left: 0,
-            top: 0,
-            bottom: 0,
-            child: Container(
-              width: 4,
-              color: borderColor,
-            ),
+          _buildInfoTile(
+            "CURRENT PLAN",
+            _planLabel(widget.member),
+            Icons.card_membership_rounded,
           ),
-
-          Padding(
-            padding: const EdgeInsets.all(16.0),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                // Row 1 — Header
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    const Padding(
-                      padding: EdgeInsets.only(left: 8.0), // Give space from the strip
-                      child: Text('🔔 Last Reminder',
-                          style: TextStyle(color: Colors.white70, fontSize: 13, fontWeight: FontWeight.w600)),
-                    ),
-                    if (last != null)
-                      Text(_getTimeAgo(last.scheduledDate),
-                          style: const TextStyle(color: Colors.white38, fontSize: 12)),
-                  ],
-                ),
-                const SizedBox(height: 10),
-                const Divider(color: Colors.white12, height: 1),
-                const SizedBox(height: 10),
-
-                // Row 2 — Details or empty state
-                Padding(
-                  padding: const EdgeInsets.only(left: 8.0), // Padding from the strip
-                  child: last == null
-                      ? const Center(
-                          child: Text('No reminders sent yet',
-                              style: TextStyle(color: Colors.white38, fontSize: 13, fontStyle: FontStyle.italic)),
-                        )
-                      : Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            Text(last.method.toLowerCase() == 'whatsapp' ? '📱 WhatsApp' : '📞 AI Call',
-                                style: const TextStyle(color: Colors.white70, fontSize: 13)),
-                            Text(last.paidAfterReminder ? '💰 Paid after ✅' : 'Unpaid ❌',
-                                style: TextStyle(
-                                  color: last.paidAfterReminder ? AppColors.accent : Colors.redAccent,
-                                  fontSize: 13,
-                                  fontWeight: FontWeight.w500,
-                                )),
-                          ],
-                        ),
-                ),
-
-                const SizedBox(height: 10),
-
-                // View History link
-                Align(
-                  alignment: Alignment.centerRight,
-                  child: GestureDetector(
-                    onTap: () => Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => ReminderHistoryScreen(
-                          memberId: _memberId,
-                        ),
-                      ),
-                    ),
-                    child: const Text('View History →',
-                        style: TextStyle(color: AppColors.accent, fontSize: 12, fontWeight: FontWeight.w500)),
-                  ),
-                ),
-              ],
-            ),
+          _buildInfoDivider(),
+          _buildInfoTile(
+            "CONTACT NUMBER",
+            widget.member?.phone ?? "NOT PROVIDED",
+            Icons.phone_iphone_rounded,
+          ),
+          _buildInfoDivider(),
+          _buildInfoTile(
+            "VALID UNTIL",
+            _formatExpiry(widget.member?.expiryDate),
+            Icons.event_available_rounded,
           ),
         ],
       ),
     );
   }
 
-  Widget _buildStatCards() {
-    final summary = _attendanceSummary;
-    
-    String formatDate(dynamic val) {
-      if (val == null) return 'N/A';
-      final dt = val is DateTime ? val : DateTime.tryParse(val.toString());
-      if (dt == null) return 'N/A';
-      return DateFormat('MMM d, yyyy').format(dt);
-    }
-
-    String formatLastArrival(DateTime? dt) {
-      if (dt == null) return 'N/A';
-      final now = DateTime.now();
-      final difference = now.difference(dt).inDays;
-      if (difference == 0) return 'Today, ${DateFormat('h:mm a').format(dt)}';
-      if (difference == 1) return 'Yesterday';
-      return '${difference}d ago';
-    }
-
-    return GridView.count(
-      crossAxisCount: 2,
-      shrinkWrap: true,
-      physics: NeverScrollableScrollPhysics(),
-      crossAxisSpacing: 12,
-      mainAxisSpacing: 12,
-      childAspectRatio: 1.1,
-      children: [
-        _statCard('📅', 'Join Date', formatDate(widget.member?.joinDate)),
-        _statCard('🏃', 'Total Visits', '${summary?.totalVisits ?? 0}'),
-        _statCard('💰', 'Lifetime Value', '₹${summary?.ltv.toStringAsFixed(2) ?? '0.00'}'),
-        _statCard('🕐', 'Last Arrival', formatLastArrival(summary?.lastArrival)),
-      ],
+  Widget _buildInfoTile(String label, String value, IconData icon, {Color? valueColor}) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 18),
+      child: Row(
+        children: [
+          Container(
+            padding: EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: AppColors.border.withOpacity(0.3),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Icon(icon, color: AppColors.secondaryText, size: 18),
+          ),
+          SizedBox(width: 16),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                label,
+                style: TextStyle(
+                  color: AppColors.secondaryText,
+                  fontSize: 10,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              SizedBox(height: 2),
+              Text(
+                value,
+                style: TextStyle(
+                  color: valueColor ?? Colors.white,
+                  fontSize: 14,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
     );
   }
 
-  Widget _statCard(String emoji, String label, String value) {
+  Widget _buildInfoDivider() {
+    return Divider(color: AppColors.border, height: 1, indent: 60);
+  }
+
+  Widget _buildAttendanceCard() {
+    return InkWell(
+      onTap: () => Navigator.push(context, MaterialPageRoute(builder: (context) => AttendanceHistoryScreen(memberId: _memberId, memberName: widget.memberName))),
+      borderRadius: BorderRadius.circular(12),
+      child: Container(
+        padding: EdgeInsets.all(20),
+        decoration: BoxDecoration(
+          color: AppColors.cardBackground,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: AppColors.border),
+        ),
+        child: Row(
+          children: [
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  "LAST SEEN",
+                  style: TextStyle(color: AppColors.secondaryText, fontSize: 10, fontWeight: FontWeight.bold),
+                ),
+                SizedBox(height: 4),
+                Text(
+                  _attendanceSummary?.lastArrival != null 
+                    ? DateFormat('EEEE, dd MMM').format(_attendanceSummary!.lastArrival!) 
+                    : "NEVER VISITED",
+                  style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w800),
+                ),
+              ],
+            ),
+            Spacer(),
+            Container(
+              padding: EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: AppColors.primaryBlue.withOpacity(0.1),
+                shape: BoxShape.circle,
+              ),
+              child: Icon(Icons.history_rounded, color: AppColors.primaryBlue, size: 20),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildReminderHistoryCard() {
+    final hasReminders = _reminders != null && _reminders!.isNotEmpty;
+    final latest = hasReminders ? _reminders!.first : null;
+
     return Container(
+      width: double.infinity,
+      padding: EdgeInsets.all(20),
       decoration: BoxDecoration(
         color: AppColors.cardBackground,
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: AppColors.border),
       ),
       child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        crossAxisAlignment: CrossAxisAlignment.center,
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(emoji, style: const TextStyle(fontSize: 24)),
-          const SizedBox(height: 8),
-          Text(label,
-              style: const TextStyle(color: Colors.white38, fontSize: 12),
-              textAlign: TextAlign.center),
-          const SizedBox(height: 4),
-          Text(value,
-              style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold),
-              textAlign: TextAlign.center),
+          Row(
+            children: [
+              Icon(Icons.history_toggle_off_rounded, color: AppColors.primaryBlue, size: 18),
+              SizedBox(width: 8),
+              Text(
+                "RECENT ACTIVITY",
+                style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w900),
+              ),
+            ],
+          ),
+          SizedBox(height: 20),
+          Text(
+            latest != null
+                ? "Last ${latest.method.toUpperCase()} reminder sent on ${latest.scheduledDate}"
+                : "No communication logged for this warrior yet.",
+            style: TextStyle(color: AppColors.secondaryText, fontSize: 13, height: 1.5),
+          ),
+          SizedBox(height: 20),
+          InkWell(
+            onTap: () {
+              Navigator.push(context, MaterialPageRoute(builder: (context) => ReminderHistoryScreen(memberId: _memberId)));
+            },
+            child: Container(
+              padding: EdgeInsets.symmetric(vertical: 12),
+              width: double.infinity,
+              decoration: BoxDecoration(
+                color: AppColors.border.withOpacity(0.3),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              alignment: Alignment.center,
+              child: Text(
+                "VIEW FULL LOGS",
+                style: TextStyle(
+                  color: AppColors.primaryBlue,
+                  fontSize: 10,
+                  fontWeight: FontWeight.w900,
+                  letterSpacing: 1.0,
+                ),
+              ),
+            ),
+          ),
         ],
       ),
     );

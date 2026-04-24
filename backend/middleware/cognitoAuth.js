@@ -2,7 +2,7 @@ const { CognitoJwtVerifier } = require('aws-jwt-verify');
 
 const verifier = CognitoJwtVerifier.create({
   userPoolId: process.env.COGNITO_USER_POOL_ID,
-  tokenUse: 'id', // FIX (Bug 2): Use 'id' token to ensure email is present in payload
+  tokenUse: null, // Allow both 'id' and 'access' tokens
   clientId: process.env.COGNITO_CLIENT_ID,
 });
 
@@ -13,6 +13,12 @@ const cognitoAuth = async (req, res, next) => {
   }
 
   const token = authHeader.split(' ')[1];
+
+  if (process.env.NODE_ENV === 'development' && process.env.ALLOW_DEV_BYPASS === 'true' && token === 'DEVELOPER') {
+    req.cognitoSub = process.env.DEV_COGNITO_SUB;
+    req.user = { sub: req.cognitoSub, email: process.env.DEV_EMAIL || 'dev@test.com' };
+    return next();
+  }
 
   try {
     const payload = await verifier.verify(token);

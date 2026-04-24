@@ -1,12 +1,9 @@
-import 'dart:convert';
-import 'dart:typed_data';
 import 'package:flutter/material.dart';
-import 'package:image_picker/image_picker.dart';
+import 'package:google_fonts/google_fonts.dart';
 import '../constants/app_colors.dart';
 import '../models/member.dart';
 import '../services/api_exception.dart';
 import '../services/api_service.dart';
-import '../widgets/api_server_dialog.dart';
 
 class AddMemberScreen extends StatefulWidget {
   @override
@@ -24,15 +21,28 @@ class _AddMemberScreenState extends State<AddMemberScreen> {
   bool _isLoading = false;
   bool _isFetchingPlans = true;
   String? _plansError;
-
-  XFile? _imageFile;
-  String? _base64Image;
-  final ImagePicker _picker = ImagePicker();
+  String? _nameError;
+  String? _phoneError;
+  String? _planError;
+  String? _submitError;
 
   @override
   void initState() {
     super.initState();
     _loadPlans();
+    _nameController.addListener(() {
+      if (_nameError != null) setState(() { _nameError = null; });
+    });
+    _phoneController.addListener(() {
+      if (_phoneError != null) setState(() { _phoneError = null; });
+    });
+  }
+
+  @override
+  void dispose() {
+    _nameController.dispose();
+    _phoneController.dispose();
+    super.dispose();
   }
 
   Future<void> _loadPlans() async {
@@ -42,14 +52,16 @@ class _AddMemberScreenState extends State<AddMemberScreen> {
     });
     try {
       final plans = await ApiService.fetchMembershipTypes();
+      debugPrint('[AddMember] plans loaded: ${plans.length}');
       if (!mounted) return;
       setState(() {
         _plans = plans;
-        _selectedPlan = null; // Always default to "Select plan" hint
+        _selectedPlan = null;
         _plansError = null;
         _isFetchingPlans = false;
       });
     } on ApiException catch (e) {
+      debugPrint('[AddMember] plans ApiException ${e.statusCode}: ${e.message}');
       if (!mounted) return;
       setState(() {
         _plans = [];
@@ -58,6 +70,7 @@ class _AddMemberScreenState extends State<AddMemberScreen> {
         _isFetchingPlans = false;
       });
     } catch (e) {
+      debugPrint('[AddMember] plans unexpected error: $e');
       if (!mounted) return;
       setState(() {
         _plans = [];
@@ -68,62 +81,80 @@ class _AddMemberScreenState extends State<AddMemberScreen> {
     }
   }
 
-  Future<void> _pickImage() async {
-    try {
-      final XFile? pickedFile = await _picker.pickImage(
-        source: ImageSource.gallery, // Use gallery for web/prototype easily
-        maxWidth: 400,
-        maxHeight: 400,
-        imageQuality: 80,
-      );
-      if (pickedFile != null) {
-        final Uint8List bytes = await pickedFile.readAsBytes();
-        setState(() {
-          _imageFile = pickedFile;
-          _base64Image = base64Encode(bytes);
-        });
-      }
-    } catch (e) {
-      print("Error picking image: $e");
-    }
+  void _showSnackbar(String msg, Color color) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Row(
+          children: [
+            Icon(Icons.info_outline, color: color, size: 20),
+            SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                msg,
+                style: TextStyle(
+                  color: AppColors.primaryText,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+          ],
+        ),
+        backgroundColor: AppColors.cardBackground,
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(12),
+          side: BorderSide(color: AppColors.border),
+        ),
+        margin: EdgeInsets.all(20),
+        duration: Duration(seconds: 3),
+      ),
+    );
   }
 
   Future<void> _enrollMember() async {
-    if (_nameController.text.isEmpty || _phoneController.text.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text("Please fill in name and phone")),
-      );
+    String? nameErr;
+    String? phoneErr;
+    String? planErr;
+
+    if (_nameController.text.trim().isEmpty) {
+      nameErr = "Full name is required";
+    }
+
+    final phone = _phoneController.text.trim();
+    final digitsOnly = phone.replaceAll(RegExp(r'\D'), '');
+    if (phone.isEmpty) {
+      phoneErr = "Phone number is required";
+    } else if (digitsOnly.length != 10) {
+      phoneErr = "Enter a valid 10-digit phone number";
+    }
+
+    if (!_isTrial && _selectedPlan == null) {
+      planErr = "Select a membership plan";
+    }
+
+    if (nameErr != null || phoneErr != null || planErr != null) {
+      setState(() {
+        _nameError = nameErr;
+        _phoneError = phoneErr;
+        _planError = planErr;
+        _submitError = null;
+      });
       return;
     }
 
-    if (!_isTrial) {
-      if (_plans.isEmpty) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              _plansError != null
-                  ? 'Fix API connection first, then reload plans.'
-                  : 'No membership plans available. Add plans in the backend or retry.',
-            ),
-            backgroundColor: Colors.redAccent,
-          ),
-        );
-        return;
-      }
-      if (_selectedPlan == null) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Select a membership plan'), backgroundColor: Colors.redAccent),
-        );
-        return;
-      }
-    }
+    setState(() {
+      _nameError = null;
+      _phoneError = null;
+      _planError = null;
+      _submitError = null;
+      _isLoading = true;
+    });
 
-    setState(() => _isLoading = true);
+    final normalizedPhone = '+91$digitsOnly';
 
     final member = Member(
-      memberName: _nameController.text,
-      phone: _phoneController.text,
-      image: _base64Image,
+      memberName: _nameController.text.trim(),
+      phone: normalizedPhone,
       membershipTypeId: _isTrial ? null : _selectedPlan?.id,
       isTrial: _isTrial,
       paymentCollected: _paymentCollected,
@@ -132,15 +163,11 @@ class _AddMemberScreenState extends State<AddMemberScreen> {
     try {
       await ApiService.enrollMember(member);
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text("Member enrolled successfully!"), backgroundColor: Colors.green),
-      );
+      _showSnackbar("Member Enrolled Successfully!", AppColors.success);
       Navigator.pop(context);
     } on ApiException catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(e.message), backgroundColor: Colors.redAccent),
-      );
+      setState(() => _submitError = e.message);
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
@@ -148,292 +175,270 @@ class _AddMemberScreenState extends State<AddMemberScreen> {
 
   @override
   Widget build(BuildContext context) {
+    const gold = Color(0xFFC9992A);
     return Scaffold(
       backgroundColor: AppColors.background,
       appBar: AppBar(
         leading: IconButton(
-          icon: const Icon(
-            Icons.arrow_back_ios,
-            color: Colors.white,
-            size: 18,
-          ),
+          icon: const Icon(Icons.arrow_back_ios, color: Colors.white, size: 18),
           onPressed: () => Navigator.of(context).pop(),
         ),
-        title: Text("Member Enrollment"),
+        elevation: 0,
+        backgroundColor: Colors.transparent,
+        title: Text("ENROLL", style: GoogleFonts.outfit(fontSize: 14, fontWeight: FontWeight.w900, letterSpacing: 1.5, color: Colors.white)),
+        centerTitle: true,
       ),
       body: SingleChildScrollView(
-        padding: const EdgeInsets.all(24.0),
+        physics: const BouncingScrollPhysics(),
+        padding: const EdgeInsets.symmetric(horizontal: 20.0, vertical: 10.0),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            // AVATAR AREA
             Center(
-              child: Stack(
-                children: [
-                  GestureDetector(
-                    onTap: _pickImage,
-                    child: CircleAvatar(
-                      radius: 50,
-                      backgroundColor: AppColors.cardBackground,
-                      backgroundImage: _base64Image != null 
-                          ? MemoryImage(base64Decode(_base64Image!)) 
-                          : null,
-                      child: _base64Image == null 
-                          ? Icon(Icons.person, size: 50, color: AppColors.secondaryText)
-                          : null,
-                    ),
-                  ),
-                  Positioned(
-                    bottom: 0,
-                    right: 0,
-                    child: GestureDetector(
-                      onTap: _pickImage,
-                      child: Container(
-                        padding: EdgeInsets.all(8),
-                        decoration: BoxDecoration(
-                          color: AppColors.accent,
-                          shape: BoxShape.circle,
-                        ),
-                        child: Icon(Icons.camera_alt, size: 20, color: Colors.white),
+              child: ValueListenableBuilder<TextEditingValue>(
+                valueListenable: _nameController,
+                builder: (_, value, __) {
+                  final initial = value.text.trim();
+                  return Container(
+                    width: 90, height: 90,
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        colors: [AppColors.border, AppColors.cardBackground],
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
                       ),
+                      borderRadius: BorderRadius.circular(30),
+                      border: Border.all(color: Colors.white.withOpacity(0.08), width: 1),
                     ),
-                  )
-                ],
-              ),
-            ),
-            SizedBox(height: 30),
-            Text("Personal Details", style: TextStyle(color: AppColors.secondaryText, fontSize: 14)),
-            SizedBox(height: 12),
-            _buildTextField("Full Name", Icons.person_outline, _nameController),
-            SizedBox(height: 16),
-            _buildTextField("Phone Number", Icons.phone_outlined, _phoneController),
-            
-            SizedBox(height: 30),
-            Text("Membership Plan", style: TextStyle(color: AppColors.secondaryText, fontSize: 14)),
-            SizedBox(height: 12),
-            _buildMembershipPlanBlock(),
-
-            SizedBox(height: 20),
-            Container(
-              decoration: BoxDecoration(
-                color: AppColors.cardBackground,
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: _isTrial ? AppColors.accent : Colors.transparent),
-              ),
-              child: SwitchListTile(
-                activeColor: AppColors.accent,
-                title: Text("Free Trial Period", style: TextStyle(color: AppColors.primaryText, fontWeight: FontWeight.bold)),
-                subtitle: Text("7 days access. No payment required now.", style: TextStyle(color: AppColors.secondaryText, fontSize: 12)),
-                value: _isTrial,
-                onChanged: (bool value) {
-                  setState(() {
-                    _isTrial = value;
-                    if (_isTrial) {
-                      _paymentCollected = false;
-                    }
-                    // Removed automatic _selectedPlan assignment when toggled off
-                  });
+                    alignment: Alignment.center,
+                    child: initial.isNotEmpty 
+                      ? Text(initial[0].toUpperCase(), style: GoogleFonts.outfit(color: Colors.white, fontSize: 32, fontWeight: FontWeight.w900))
+                      : Icon(Icons.add_a_photo_rounded, size: 30, color: Colors.white.withOpacity(0.2)),
+                  );
                 },
               ),
             ),
+            
+            const SizedBox(height: 32),
+            _sectionLabel("ENROLLMENT TYPE"),
+            const SizedBox(height: 16),
+            
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: AppColors.cardBackground.withOpacity(0.8),
+                borderRadius: BorderRadius.circular(24),
+                border: Border.all(color: Colors.white.withOpacity(0.08), width: 0.5),
+              ),
+              child: Row(
+                children: [
+                  _buildTypeTab("FREE TRIAL", _isTrial, () => setState(() { _isTrial = true; _selectedPlan = null; _paymentCollected = false; })),
+                  const SizedBox(width: 8),
+                  _buildTypeTab("PAID PLAN", !_isTrial, () => setState(() => _isTrial = false)),
+                ],
+              ),
+            ),
 
-            if (!_isTrial) ...[
-              SizedBox(height: 16),
-              Container(
-                decoration: BoxDecoration(
-                  color: AppColors.cardBackground,
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: SwitchListTile(
-                  activeColor: AppColors.accent,
-                  title: Text("Initial Payment Collected", style: TextStyle(color: AppColors.primaryText, fontWeight: FontWeight.bold)),
-                  subtitle: Text(_paymentCollected ? "Logged as revenue." : "Will show in pending dues.", style: TextStyle(color: AppColors.secondaryText, fontSize: 12)),
-                  value: _paymentCollected,
-                  onChanged: (bool value) {
-                    setState(() {
-                      _paymentCollected = value;
-                    });
-                  },
+            const SizedBox(height: 32),
+            _sectionLabel("PERSONAL DETAILS"),
+            const SizedBox(height: 16),
+            
+            Container(
+              decoration: BoxDecoration(
+                color: AppColors.cardBackground.withOpacity(0.8),
+                borderRadius: BorderRadius.circular(28),
+                border: Border.all(color: Colors.white.withOpacity(0.08), width: 0.5),
+                gradient: LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [
+                    Colors.white.withOpacity(0.02),
+                    Colors.transparent,
+                  ],
                 ),
               ),
+              child: Column(
+                children: [
+                  _buildPremiumField("Full Name", Icons.person_outline_rounded, _nameController, error: _nameError),
+                  _divider(),
+                  _buildPremiumField("Phone Number", Icons.phone_iphone_rounded, _phoneController, error: _phoneError, keyboardType: TextInputType.phone),
+                ],
+              ),
+            ),
+            
+            AnimatedSize(
+              duration: const Duration(milliseconds: 300),
+              curve: Curves.easeInOut,
+              child: _isTrial
+                  ? const SizedBox(height: 0)
+                  : Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const SizedBox(height: 32),
+                        _sectionLabel("SELECT MEMBERSHIP PLAN"),
+                        const SizedBox(height: 16),
+                        _buildPlansList(),
+                        const SizedBox(height: 24),
+                        Container(
+                          decoration: BoxDecoration(
+                            color: AppColors.cardBackground.withOpacity(0.8),
+                            borderRadius: BorderRadius.circular(24),
+                            border: Border.all(color: Colors.white.withOpacity(0.08), width: 0.5),
+                          ),
+                          child: SwitchListTile(
+                            controlAffinity: ListTileControlAffinity.trailing,
+                            activeColor: Colors.white,
+                            activeTrackColor: AppColors.emerald,
+                            title: Text("Initial Payment Received", style: GoogleFonts.outfit(color: AppColors.primaryText, fontWeight: FontWeight.w700, fontSize: 14)),
+                            subtitle: Text(_paymentCollected ? "Payment secured" : "Mark as pending", style: GoogleFonts.outfit(color: AppColors.secondaryText, fontSize: 12)),
+                            value: _paymentCollected,
+                            onChanged: (val) => setState(() => _paymentCollected = val),
+                            contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 4),
+                          ),
+                        ),
+                      ],
+                    ),
+            ),
+
+            const SizedBox(height: 40),
+            if (_submitError != null) ...[
+              _buildErrorBox(_submitError!),
+              const SizedBox(height: 16),
             ],
 
-            SizedBox(height: 40),
             SizedBox(
               width: double.infinity,
+              height: 56,
               child: ElevatedButton(
                 onPressed: _isLoading ? null : _enrollMember,
                 style: ElevatedButton.styleFrom(
                   backgroundColor: AppColors.accent,
-                  padding: EdgeInsets.symmetric(vertical: 16),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
-                  ),
+                  foregroundColor: Colors.black,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                  elevation: 0,
                 ),
                 child: _isLoading 
-                  ? CircularProgressIndicator(color: Colors.white)
-                  : Text(
-                      _isTrial ? "Start Free Trial" : "Enroll Member",
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 16,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
+                  ? const SizedBox(width: 24, height: 24, child: CircularProgressIndicator(color: Colors.black, strokeWidth: 3))
+                  : Text(_isTrial ? "AUTHORIZE TRIAL" : "CONFIRM ENROLLMENT", style: GoogleFonts.outfit(fontWeight: FontWeight.w900, fontSize: 14, letterSpacing: 1.0)),
               ),
-            )
+            ),
+            const SizedBox(height: 40),
           ],
         ),
       ),
     );
   }
 
-  Widget _buildMembershipPlanBlock() {
-    if (_isFetchingPlans) {
-      return Center(child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 24),
-        child: CircularProgressIndicator(color: AppColors.accent),
-      ));
-    }
+  Widget _sectionLabel(String text) {
+    return Padding(
+      padding: const EdgeInsets.only(left: 8.0),
+      child: Text(text, style: GoogleFonts.outfit(color: AppColors.secondaryText, fontSize: 11, fontWeight: FontWeight.w900, letterSpacing: 1.5)),
+    );
+  }
 
-    if (_plansError != null) {
-      return Container(
-        width: double.infinity,
-        padding: EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          color: AppColors.cardBackground,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: Colors.redAccent.withValues(alpha: 0.5)),
+  Widget _buildTypeTab(String label, bool active, VoidCallback onTap) {
+    return Expanded(
+      child: GestureDetector(
+        onTap: onTap,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 200),
+          padding: const EdgeInsets.symmetric(vertical: 12),
+          decoration: BoxDecoration(
+            color: active ? AppColors.primaryBlue.withOpacity(0.12) : Colors.transparent,
+            borderRadius: BorderRadius.circular(18),
+            border: Border.all(color: active ? AppColors.primaryBlue.withOpacity(0.4) : Colors.transparent, width: 1),
+          ),
+          alignment: Alignment.center,
+          child: Text(label, style: GoogleFonts.outfit(color: active ? AppColors.primaryBlue : AppColors.secondaryText, fontSize: 11, fontWeight: FontWeight.w900, letterSpacing: 1.0)),
         ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Could not load plans',
-              style: TextStyle(color: AppColors.primaryText, fontWeight: FontWeight.bold),
+      ),
+    );
+  }
+
+  Widget _buildPremiumField(String label, IconData icon, TextEditingController ctrl, {String? error, TextInputType? keyboardType}) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          TextField(
+            controller: ctrl,
+            keyboardType: keyboardType,
+            style: GoogleFonts.outfit(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w600),
+            decoration: InputDecoration(
+              hintText: label,
+              hintStyle: GoogleFonts.outfit(color: AppColors.secondaryText.withOpacity(0.4), fontSize: 15),
+              prefixIcon: Icon(icon, color: error != null ? AppColors.error : AppColors.secondaryText.withOpacity(0.6), size: 20),
+              border: InputBorder.none,
+              contentPadding: const EdgeInsets.symmetric(vertical: 18),
             ),
-            SizedBox(height: 8),
-            Text(
-              _plansError!,
-              style: TextStyle(color: AppColors.secondaryText, fontSize: 13),
+          ),
+          if (error != null)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(48, 0, 16, 12),
+              child: Text(error, style: GoogleFonts.outfit(color: AppColors.error, fontSize: 11, fontWeight: FontWeight.bold)),
             ),
-            SizedBox(height: 12),
-            Row(
+        ],
+      ),
+    );
+  }
+
+  Widget _divider() => Divider(color: Colors.white.withOpacity(0.05), height: 1, indent: 48);
+
+  Widget _buildErrorBox(String msg) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: AppColors.error.withOpacity(0.08), 
+        borderRadius: BorderRadius.circular(20), 
+        border: Border.all(color: AppColors.error.withOpacity(0.3))
+      ),
+      child: Row(children: [
+        const Icon(Icons.error_outline_rounded, color: AppColors.error, size: 20),
+        const SizedBox(width: 12),
+        Expanded(child: Text(msg, style: GoogleFonts.outfit(color: AppColors.error, fontSize: 13, fontWeight: FontWeight.w500))),
+      ]),
+    );
+  }
+
+  Widget _buildPlansList() {
+    if (_isFetchingPlans) return const Center(child: Padding(padding: EdgeInsets.all(40), child: CircularProgressIndicator(color: AppColors.primaryBlue)));
+    if (_plansError != null) return _buildErrorBox(_plansError!);
+    
+    return Column(
+      children: _plans.map((p) {
+        final sel = _selectedPlan?.id == p.id;
+        return GestureDetector(
+          onTap: () => setState(() { _selectedPlan = p; _planError = null; }),
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 200),
+            margin: const EdgeInsets.only(bottom: 12),
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: sel ? AppColors.primaryBlue.withOpacity(0.08) : AppColors.cardBackground.withOpacity(0.6),
+              borderRadius: BorderRadius.circular(24),
+              border: Border.all(color: sel ? AppColors.primaryBlue.withOpacity(0.5) : Colors.white.withOpacity(0.06), width: 1),
+            ),
+            child: Row(
               children: [
-                TextButton.icon(
-                  onPressed: () async {
-                    await showApiServerDialog(context);
-                    if (context.mounted) _loadPlans();
-                  },
-                  icon: Icon(Icons.dns, color: AppColors.accent),
-                  label: Text('Set API server', style: TextStyle(color: AppColors.accent)),
+                Container(
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(color: AppColors.primaryBlue.withOpacity(0.1), borderRadius: BorderRadius.circular(14)),
+                  child: Icon(Icons.stars_rounded, color: AppColors.primaryBlue, size: 20),
                 ),
-                SizedBox(width: 8),
-                TextButton.icon(
-                  onPressed: _loadPlans,
-                  icon: Icon(Icons.refresh, color: AppColors.accent),
-                  label: Text('Retry', style: TextStyle(color: AppColors.accent)),
-                ),
+                const SizedBox(width: 16),
+                Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Text(p.name, style: GoogleFonts.outfit(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 15)),
+                  const SizedBox(height: 2),
+                  Text("\u20B9${p.amount.toInt()} \u2022 ${p.durationMonths} Months", style: GoogleFonts.outfit(color: AppColors.secondaryText, fontSize: 12)),
+                ])),
+                Icon(sel ? Icons.check_circle_rounded : Icons.radio_button_off_rounded, color: sel ? AppColors.primaryBlue : Colors.white.withOpacity(0.1), size: 22),
               ],
             ),
-          ],
-        ),
-      );
-    }
-
-    if (_plans.isEmpty) {
-      return Container(
-        width: double.infinity,
-        padding: EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          color: AppColors.cardBackground,
-          borderRadius: BorderRadius.circular(12),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'No membership types returned',
-              style: TextStyle(color: AppColors.primaryText, fontWeight: FontWeight.bold),
-            ),
-            SizedBox(height: 8),
-            Text(
-              'The API responded but the list is empty. Seed membership_types in the database, then tap Retry.',
-              style: TextStyle(color: AppColors.secondaryText, fontSize: 13),
-            ),
-            SizedBox(height: 12),
-            TextButton.icon(
-              onPressed: _loadPlans,
-              icon: Icon(Icons.refresh, color: AppColors.accent),
-              label: Text('Retry', style: TextStyle(color: AppColors.accent)),
-            ),
-          ],
-        ),
-      );
-    }
-
-    if (_isTrial) {
-      return Container(
-        width: double.infinity,
-        padding: EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          color: AppColors.cardBackground,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: AppColors.accent.withValues(alpha: 0.4)),
-        ),
-        child: Text(
-          'Free trial is on — no paid plan is required. Turn off “Free Trial Period” below to pick a plan from the list.',
-          style: TextStyle(color: AppColors.secondaryText, fontSize: 14),
-        ),
-      );
-    }
-
-    return Container(
-      padding: EdgeInsets.symmetric(horizontal: 16),
-      decoration: BoxDecoration(
-        color: AppColors.cardBackground,
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: DropdownButtonHideUnderline(
-        child: DropdownButton<MembershipType>(
-          value: _selectedPlan,
-          hint: Text('Select plan', style: TextStyle(color: AppColors.secondaryText)),
-          dropdownColor: AppColors.cardBackground,
-          icon: Icon(Icons.arrow_drop_down, color: AppColors.secondaryText),
-          isExpanded: true,
-          style: TextStyle(color: AppColors.primaryText, fontSize: 16),
-          onChanged: (MembershipType? newValue) {
-            setState(() => _selectedPlan = newValue);
-          },
-          items: _plans.map<DropdownMenuItem<MembershipType>>((MembershipType plan) {
-            return DropdownMenuItem<MembershipType>(
-              value: plan,
-              child: Text('${plan.name} (₹${plan.amount.toStringAsFixed(plan.amount.truncateToDouble() == plan.amount ? 0 : 2)})'),
-            );
-          }).toList(),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildTextField(String hint, IconData icon, TextEditingController controller) {
-    return TextField(
-      controller: controller,
-      style: TextStyle(color: AppColors.primaryText),
-      decoration: InputDecoration(
-        filled: true,
-        fillColor: AppColors.cardBackground,
-        hintText: hint,
-        hintStyle: TextStyle(color: AppColors.secondaryText),
-        prefixIcon: Icon(icon, color: AppColors.secondaryText),
-        border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-          borderSide: BorderSide.none,
-        ),
-        focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-          borderSide: BorderSide(color: AppColors.accent, width: 2),
-        ),
-      ),
+          ),
+        );
+      }).toList(),
     );
   }
 }

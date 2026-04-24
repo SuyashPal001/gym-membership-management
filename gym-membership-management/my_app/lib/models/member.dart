@@ -47,7 +47,6 @@ class Member {
   final String memberName;
   final String phone;
   final String? email;
-  final String? image;
   final String? membershipTypeId;
   final String? joinDate;
   final String? expiryDate;
@@ -64,7 +63,6 @@ class Member {
     required this.memberName,
     required this.phone,
     this.email,
-    this.image,
     this.membershipTypeId,
     this.joinDate,
     this.expiryDate,
@@ -83,7 +81,6 @@ class Member {
       memberName: json['member_name'] ?? '',
       phone: json['phone'] ?? '',
       email: json['email'],
-      image: json['avatar']?.toString() ?? json['image']?.toString(),
       membershipTypeId: json['membership_type_id'],
       joinDate: json['join_date'],
       expiryDate: json['expiry_date'],
@@ -104,7 +101,6 @@ class Member {
       'member_name': memberName,
       'phone': phone,
       'email': email,
-      if (image != null && image!.isNotEmpty) 'avatar': image,
       'membership_type_id': membershipTypeId,
       'is_trial': isTrial,
       'payment_collected': paymentCollected,
