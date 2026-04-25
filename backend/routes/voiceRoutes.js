@@ -134,7 +134,8 @@ router.post('/transcribe', async (req, res) => {
 
     const client = await auth.getClient();
     const tokenResponse = await client.getAccessToken();
-    const accessToken = tokenResponse.token;
+    const accessToken = tokenResponse?.token;
+    if (!accessToken) return res.status(500).json({ success: false, message: 'Failed to acquire GCP access token' });
 
     const response = await fetch('https://speech.googleapis.com/v1/speech:recognize', {
       method: 'POST',
@@ -155,7 +156,10 @@ router.post('/transcribe', async (req, res) => {
     const data = await response.json();
     if (!data.results || data.results.length === 0) return res.json({ success: true, text: '' });
 
-    const transcript = data.results.map(r => r.alternatives[0].transcript).join(' ');
+    const transcript = data.results
+      .map(r => r.alternatives?.[0]?.transcript || '')
+      .filter(t => t)
+      .join(' ');
     res.json({ success: true, text: transcript });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
@@ -175,7 +179,8 @@ router.post('/speak', async (req, res) => {
 
     const client = await auth.getClient();
     const tokenResponse = await client.getAccessToken();
-    const accessToken = tokenResponse.token;
+    const accessToken = tokenResponse?.token;
+    if (!accessToken) return res.status(500).json({ success: false, message: 'Failed to acquire GCP access token' });
 
     const response = await fetch('https://texttospeech.googleapis.com/v1/text:synthesize', {
       method: 'POST',
@@ -307,7 +312,7 @@ async function executeTool(toolName, args, gymId) {
       const member = await Member.findOne({ where: { gym_id: gymId, member_name: { [Op.iLike]: `%${args.member_name}%` } } });
       if (!member) return { success: false, message: `Member ${args.member_name} not found` };
       const paymentAmount = parseFloat(args.amount);
-      if (!paymentAmount || isNaN(paymentAmount) || paymentAmount <= 0) return { success: false, message: 'Invalid amount' };
+      if (isNaN(paymentAmount) || paymentAmount <= 0) return { success: false, message: 'Invalid amount' };
       await Payment.create({ gym_id: gymId, member_id: member.id, amount: paymentAmount, status: 'paid', payment_date: dayjs.utc().toDate(), method: args.method || 'voice_log' });
       await member.update({ payment_collected: true, last_payment_date: dayjs.utc().toDate(), lifetime_value: member.lifetime_value + paymentAmount });
       return { success: true, message: `Payment of ₹${paymentAmount} logged` };
@@ -316,7 +321,7 @@ async function executeTool(toolName, args, gymId) {
       const member = await Member.findOne({ where: { gym_id: gymId, member_name: { [Op.iLike]: `%${args.member_name}%` } } });
       if (!member) return { success: false, message: `Member ${args.member_name} not found` };
       const dueAmount = parseFloat(args.amount);
-      if (!dueAmount || isNaN(dueAmount) || dueAmount <= 0) return { success: false, message: 'Invalid due amount' };
+      if (isNaN(dueAmount) || dueAmount <= 0) return { success: false, message: 'Invalid due amount' };
       await Payment.create({ gym_id: gymId, member_id: member.id, amount: dueAmount, status: 'pending', payment_date: dayjs.utc().toDate(), method: 'voice_log' });
       return { success: true, message: `Due of ₹${dueAmount} recorded` };
     }
