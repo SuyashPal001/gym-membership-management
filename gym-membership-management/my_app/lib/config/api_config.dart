@@ -38,17 +38,17 @@ class ApiConfig {
 
   static const _prefsKey = 'api_base_url';
 
-  /// Longer than API calls — first connection on Wi‑Fi can be slow.
+  /// Longer than API calls — first connection on Wi-Fi can be slow.
   static const Duration healthCheckTimeout = Duration(seconds: 25);
 
   static String get networkTroubleshootHint {
     return 'Quick checks:\n'
-        '• Backend running? (terminal: nodemon / npm run dev)\n'
-        '• Correct IP? Run ipconfig on the PC — Wi‑Fi IPv4 changes with DHCP.\n'
-        '• Same Wi‑Fi as the phone (not “guest” Wi‑Fi — it often blocks device-to-device).\n'
-        '• Windows Firewall: allow Node.js or port 5001 on Private networks.\n'
-        '• Turn VPN off on phone or PC while testing.\n'
-        '• USB: adb reverse tcp:5001 tcp:5001 then use 127.0.0.1:5001';
+        '- Backend running? (terminal: nodemon / npm run dev)\n'
+        '- Correct IP? Run ipconfig on the PC -- Wi-Fi IPv4 changes with DHCP.\n'
+        '- Same Wi-Fi as the phone (not "guest" Wi-Fi -- it often blocks device-to-device).\n'
+        '- Windows Firewall: allow Node.js or port 5001 on Private networks.\n'
+        '- Turn VPN off on phone or PC while testing.\n'
+        '- USB: adb reverse tcp:5001 tcp:5001 then use 127.0.0.1:5001';
   }
 
   /// Human-readable reason for failed HTTP (timeout, refused, etc.).
@@ -57,11 +57,11 @@ class ApiConfig {
     final msg = e.toString().toLowerCase();
     if (e is TimeoutException || msg.contains('timed out') || msg.contains('timeout')) {
       return 'Timed out waiting for the server.$loc\n'
-          'Usually: wrong IP, firewall, guest Wi‑Fi isolation, or API not running.';
+          'Usually: wrong IP, firewall, guest Wi-Fi isolation, or API not running.';
     }
     if (msg.contains('connection refused') || msg.contains('errno = 111')) {
       return 'Connection refused.$loc\n'
-          'Nothing is listening on that address — start the API or fix the port.';
+          'Nothing is listening on that address -- start the API or fix the port.';
     }
     if (msg.contains('failed host lookup') || msg.contains('name not resolved')) {
       return 'Could not resolve hostname.$loc';
@@ -77,7 +77,7 @@ class ApiConfig {
     var s = raw.trim();
     if (s.isEmpty) {
       throw FormatException(
-        'Type your PC’s full address from ipconfig (example: 192.168.1.15:5000).',
+        'Type your PC\'s full address from ipconfig (example: 192.168.1.15:5000).',
       );
     }
     if (s.toLowerCase().startsWith('http://')) {
@@ -102,7 +102,7 @@ class ApiConfig {
       final parts = host.split('.').where((p) => p.isNotEmpty).toList();
       if (parts.length != 4) {
         throw FormatException(
-          'IPv4 needs four parts (from ipconfig). Example: 192.168.1.15:5000 — not 192.168.1.',
+          'IPv4 needs four parts (from ipconfig). Example: 192.168.1.15:5000 -- not 192.168.1.',
         );
       }
       for (final p in parts) {
@@ -115,31 +115,31 @@ class ApiConfig {
   }
 
   /// Normalizes to `scheme://host[:port]/api`.
-  /// - HTTPS with no explicit port → `https://host/api` (standard 443, no port appended)
-  /// - HTTP with no explicit port or port 80 → defaults to port 5001 (local dev)
+  /// - HTTPS with no explicit port -> `https://host/api` (standard 443, no port appended)
+  /// - HTTP with no explicit port or port 80 -> defaults to port 5001 (local dev)
   static String normalizeBaseUrl(String raw) {
     assertPcAddressLooksComplete(raw);
     var s = raw.trim();
     if (s.isEmpty) {
-      throw FormatException(‘Enter your PC’s address (e.g. 192.168.1.10:5001)’);
+      throw FormatException('Enter your PC\'s address (e.g. 192.168.1.10:5001)');
     }
     final lower = s.toLowerCase();
-    if (!lower.startsWith(‘http://’) && !lower.startsWith(‘https://’)) {
-      s = ‘http://$s’;
+    if (!lower.startsWith('http://') && !lower.startsWith('https://')) {
+      s = 'http://$s';
     }
     final u = Uri.parse(s);
     if (!u.hasScheme || u.host.isEmpty) {
-      throw FormatException(‘Invalid address. Example: 192.168.1.10:5001’);
+      throw FormatException('Invalid address. Example: 192.168.1.10:5001');
     }
     final String origin;
     final port = u.port;
-    if (u.scheme == ‘https’ && (port == 0 || port == 443)) {
-      origin = ‘https://${u.host}’;
+    if (u.scheme == 'https' && (port == 0 || port == 443)) {
+      origin = 'https://${u.host}';
     } else {
       final effectivePort = (port == 0 || port == 80) ? 5001 : port;
-      origin = ‘${u.scheme}://${u.host}:$effectivePort’;
+      origin = '${u.scheme}://${u.host}:$effectivePort';
     }
-    return ‘$origin/api’;
+    return '$origin/api';
   }
 
   /// Confirms Node API is up (`GET /health` then `GET /`).
@@ -185,7 +185,7 @@ class ApiConfig {
     if (kIsWeb) return 'http://localhost:5001/api';
     switch (defaultTargetPlatform) {
       case TargetPlatform.android:
-        return 'http://10.0.2.2:5001/api'; // 10.0.2.2 = host machine from Android emulator
+        return 'http://10.0.2.2:5001/api';
       case TargetPlatform.iOS:
         return 'http://127.0.0.1:5001/api';
       default:
@@ -194,7 +194,6 @@ class ApiConfig {
   }
 
   static String get apiOrigin => Uri.parse(baseUrl).origin;
-
 
   static const String cognitoUserPoolId = 'ap-south-1_fujnJpibc';
   static const String cognitoClientId = '3133ldc1jrvu87ka18ce56fto9';
