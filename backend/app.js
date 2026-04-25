@@ -50,6 +50,9 @@ app.use((req, res, next) => {
 // Serve static uploads
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
+// Serve Flutter web app
+app.use(express.static(path.join(__dirname, 'public')));
+
 const authRoutes = require('./routes/auth');
 const cognitoAuth = require('./middleware/cognitoAuth');
 const resolveGymId = require('./middleware/resolveGymId');
@@ -79,6 +82,11 @@ cron.schedule('0 0 * * *', () => {
   memberService.autoExpireMembers()
     .then(() => console.log('[CRON] Membership expiry sweep completed'))
     .catch((err) => console.error('[CRON] Membership expiry sweep failed:', err.message));
+});
+
+// Catch-all: serve Flutter index.html for any non-API route (client-side routing)
+app.get('*', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
 // Database sync and Start
