@@ -114,27 +114,32 @@ class ApiConfig {
     }
   }
 
-  /// Normalizes to `http://host:port/api`. Plain `http://ip` uses port **5001** (not 80).
+  /// Normalizes to `scheme://host[:port]/api`.
+  /// - HTTPS with no explicit port → `https://host/api` (standard 443, no port appended)
+  /// - HTTP with no explicit port or port 80 → defaults to port 5001 (local dev)
   static String normalizeBaseUrl(String raw) {
     assertPcAddressLooksComplete(raw);
     var s = raw.trim();
     if (s.isEmpty) {
-      throw FormatException('Enter your PC’s address (e.g. 192.168.1.10:5001)');
+      throw FormatException(‘Enter your PC’s address (e.g. 192.168.1.10:5001)’);
     }
     final lower = s.toLowerCase();
-    if (!lower.startsWith('http://') && !lower.startsWith('https://')) {
-      s = 'http://$s';
+    if (!lower.startsWith(‘http://’) && !lower.startsWith(‘https://’)) {
+      s = ‘http://$s’;
     }
     final u = Uri.parse(s);
     if (!u.hasScheme || u.host.isEmpty) {
-      throw FormatException('Invalid address. Example: 192.168.1.10:5001');
+      throw FormatException(‘Invalid address. Example: 192.168.1.10:5001’);
     }
-    var port = u.port;
-    if (port == 0 || port == 80) {
-      port = 5001;
+    final String origin;
+    final port = u.port;
+    if (u.scheme == ‘https’ && (port == 0 || port == 443)) {
+      origin = ‘https://${u.host}’;
+    } else {
+      final effectivePort = (port == 0 || port == 80) ? 5001 : port;
+      origin = ‘${u.scheme}://${u.host}:$effectivePort’;
     }
-    final origin = '${u.scheme}://${u.host}:$port';
-    return '$origin/api';
+    return ‘$origin/api’;
   }
 
   /// Confirms Node API is up (`GET /health` then `GET /`).
