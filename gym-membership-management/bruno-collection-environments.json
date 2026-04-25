@@ -1,0 +1,89 @@
+{
+  "info": {
+    "type": "bruno-environment",
+    "exportedAt": "2026-04-16T19:31:08.337Z",
+    "exportedUsing": "Bruno/v3.2.2"
+  },
+  "environments": [
+    {
+      "name": "dev",
+      "variables": [
+        {
+          "name": "base_url",
+          "value": "http://localhost:5001/api",
+          "type": "text",
+          "enabled": true,
+          "secret": false
+        },
+        {
+          "name": "member_id",
+          "value": "d9194742-d705-43f9-8a63-ccc0a55bd430",
+          "type": "text",
+          "enabled": true,
+          "secret": false
+        },
+        {
+          "name": "Gym UUID",
+          "value": "550e8400-e29b-41d4-a716-446655440000",
+          "type": "text",
+          "enabled": true,
+          "secret": false
+        },
+        {
+          "name": "Membership Type UUID",
+          "value": "648b1d26-45c9-4337-9cdf-6dbd8c02c4b6",
+          "type": "text",
+          "enabled": true,
+          "secret": false
+        },
+        {
+          "name": "GYM_ID",
+          "value": "550e8400-e29b-41d4-a716-446655440000",
+          "type": "text",
+          "enabled": true,
+          "secret": false
+        }
+      ]
+    },
+    {
+      "name": "dev - Copy",
+      "variables": [
+        {
+          "name": "base_url",
+          "value": "http://localhost:5001/api",
+          "type": "text",
+          "enabled": true,
+          "secret": false
+        },
+        {
+          "name": "member_id",
+          "value": "d9194742-d705-43f9-8a63-ccc0a55bd430",
+          "type": "text",
+          "enabled": true,
+          "secret": false
+        },
+        {
+          "name": "Gym UUID",
+          "value": "550e8400-e29b-41d4-a716-446655440000",
+          "type": "text",
+          "enabled": true,
+          "secret": false
+        },
+        {
+          "name": "Membership Type UUID",
+          "value": "648b1d26-45c9-4337-9cdf-6dbd8c02c4b6",
+          "type": "text",
+          "enabled": true,
+          "secret": false
+        },
+        {
+          "name": "GYM_ID",
+          "value": "550e8400-e29b-41d4-a716-446655440000",
+          "type": "text",
+          "enabled": true,
+          "secret": false
+        }
+      ]
+    }
+  ]
+}

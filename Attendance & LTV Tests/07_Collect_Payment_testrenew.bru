@@ -1,0 +1,11 @@
+meta {
+  name: 7. Collect Payment for testrenew
+  type: http
+  seq: 7
+}
+
+patch {
+  url: {{baseUrl}}/api/payments/550e8400-e29b-41d4-a716-446655440000/{{testrenew_id}}
+  body: none
+  auth: none
+}

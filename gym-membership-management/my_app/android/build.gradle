@@ -1,0 +1,27 @@
+allprojects {
+    repositories {
+        google()
+        mavenCentral()
+    }
+}
+
+rootProject.buildDir = "../build"
+subprojects {
+    project.buildDir = "${rootProject.buildDir}/${project.name}"
+    project.evaluationDependsOn(":app")
+}
+
+tasks.register("clean", Delete) {
+    delete rootProject.buildDir
+}
+
+subprojects {
+    // Industry fix for 'already evaluated' and 'missing namespace' errors
+    project.plugins.withId('com.android.library') {
+        project.android {
+            if (namespace == null) {
+                namespace = project.group.toString().replaceAll('-', '_')
+            }
+        }
+    }
+}
