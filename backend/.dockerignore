@@ -1,0 +1,15 @@
+node_modules
+npm-debug.log
+.env
+*.log
+*.txt
+*.json.bak
+tmp/
+scratch/
+debug_log.txt
+server_logs.txt
+my_server_logs.txt
+test_output.txt
+test_chat_out.txt
+test_error.txt
+-F

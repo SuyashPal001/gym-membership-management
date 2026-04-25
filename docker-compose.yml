@@ -1,0 +1,18 @@
+services:
+  gym-backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: gym-backend
+    restart: unless-stopped
+    env_file:
+      - ./backend/.env
+    volumes:
+      - ./backend/uploads:/app/uploads
+    networks:
+      - proxy_net
+
+networks:
+  proxy_net:
+    external: true
+    name: nginx-stack_proxy_net
