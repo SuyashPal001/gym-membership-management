@@ -1,0 +1,36 @@
+name: my_app
+description: "An Uber-inspired Flutter web application."
+publish_to: 'none'
+
+version: 1.0.0+1
+
+environment:
+  sdk: '>=3.4.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  cupertino_icons: ^1.0.8
+  http: ^1.2.1
+  image_picker: ^1.1.2
+  shared_preferences: ^2.3.3
+  intl: ^0.19.0
+  speech_to_text: ^7.3.0
+  flutter_tts: ^4.2.5
+  just_audio: ^0.9.36
+  google_sign_in: ^6.2.1
+  url_launcher: ^6.3.0
+  app_links: ^6.3.2
+  crypto: ^3.0.3
+  google_fonts: ^6.2.1
+  lottie: ^3.1.2
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^4.0.0
+
+flutter:
+  uses-material-design: true
+  assets:
+    - assets/animations/

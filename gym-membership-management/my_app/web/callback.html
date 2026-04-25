@@ -1,0 +1,20 @@
+<!DOCTYPE html>
+<html>
+<head><title>Auth Callback</title></head>
+<body>
+<script>
+  var sent = false;
+  if (!sent && window.opener) {
+    sent = true;
+    var params = new URLSearchParams(window.location.search);
+    var code = params.get('code');
+    var error = params.get('error');
+    window.opener.postMessage(
+      { code: code, error: error },
+      window.opener.location.origin
+    );
+    window.close();
+  }
+</script>
+</body>
+</html>

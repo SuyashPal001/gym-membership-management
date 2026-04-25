@@ -1,0 +1,42 @@
+[
+  {
+    "id": "1d6e90eb-8273-4b9a-93cd-05dc92f9f6ff",
+    "gym_id": "550e8400-e29b-41d4-a716-446655440000",
+    "member_name": "Bruno Tester",
+    "phone": "+1234567890",
+    "email": "bruno@test.com",
+    "avatar": "/uploads/avatars/avatar-1775415057538-325053131.png",
+    "last_arrival": null,
+    "membership_type_id": "648b1d26-45c9-4337-9cdf-6dbd8c02c4b6",
+    "join_date": "2026-04-05",
+    "expiry_date": "2026-06-05",
+    "status": "active",
+    "is_trial": false,
+    "payment_collected": true,
+    "last_payment_date": null,
+    "total_visits": 0,
+    "lifetime_value": 0,
+    "createdAt": "2026-04-05T14:25:28.598Z",
+    "updatedAt": "2026-04-06T08:47:13.933Z"
+  },
+  {
+    "id": "24008537-b6f5-4d0f-949a-b4d41329b373",
+    "gym_id": "550e8400-e29b-41d4-a716-446655440000",
+    "member_name": "testpaid",
+    "phone": "+15550000001",
+    "email": null,
+    "avatar": null,
+    "last_arrival": null,
+    "membership_type_id": "648b1d26-45c9-4337-9cdf-6dbd8c02c4b6",
+    "join_date": "2026-04-08",
+    "expiry_date": "2026-05-08",
+    "status": "active",
+    "is_trial": false,
+    "payment_collected": false,
+    "last_payment_date": null,
+    "total_visits": 0,
+    "lifetime_value": 0,
+    "createdAt": "2026-04-08T10:05:03.472Z",
+    "updatedAt": "2026-04-08T10:05:03.472Z"
+  }
+]

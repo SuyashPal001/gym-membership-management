@@ -1,0 +1,17 @@
+meta {
+  name: 4. Check out testpaid
+  type: http
+  seq: 4
+}
+
+post {
+  url: {{baseUrl}}/api/attendance/scan
+  body: json
+  auth: none
+}
+
+body:json {
+  {
+    "phone": "+15550000001"
+  }
+}

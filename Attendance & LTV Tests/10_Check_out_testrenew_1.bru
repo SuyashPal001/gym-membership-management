@@ -1,0 +1,17 @@
+meta {
+  name: 9b. Check out testrenew 1
+  type: http
+  seq: 10
+}
+
+post {
+  url: {{baseUrl}}/api/attendance/scan
+  body: json
+  auth: none
+}
+
+body:json {
+  {
+    "phone": "+15550000002"
+  }
+}

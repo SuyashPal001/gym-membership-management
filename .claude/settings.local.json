@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "WebSearch",
+      "Bash(npm run *)",
+      "Bash(xargs ls *)",
+      "Bash(xargs grep *)",
+      "Bash(flutter build *)",
+      "Bash(node -e ' *)",
+      "Bash(grep -v \"Use \\\\`node\")"
+    ]
+  }
+}
