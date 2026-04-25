@@ -6,3 +6,4 @@ build/
 .pub/
 .flutter-plugins
 .flutter-plugins-dependencies
+*.md
