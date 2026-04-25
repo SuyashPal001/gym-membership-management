@@ -20,8 +20,21 @@ const memberService = require('./services/memberService');
 const app = express();
 const PORT = process.env.PORT || 5001;
 
+// Trust nginx reverse proxy so req.ip returns real client IP (required for rate limiting)
+app.set('trust proxy', 1);
+
+const allowedOrigins = process.env.ALLOWED_ORIGINS
+  ? process.env.ALLOWED_ORIGINS.split(',').map(o => o.trim())
+  : ['*'];
+
 app.use(cors({
-  origin: '*', // for local dev only
+  origin: (origin, callback) => {
+    if (!origin || allowedOrigins.includes('*') || allowedOrigins.includes(origin)) {
+      callback(null, true);
+    } else {
+      callback(new Error(`CORS blocked: ${origin}`));
+    }
+  },
   methods: ['GET', 'POST', 'PUT', 'DELETE'],
   allowedHeaders: ['Content-Type', 'Authorization']
 }));
@@ -40,6 +53,11 @@ app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 const authRoutes = require('./routes/auth');
 const cognitoAuth = require('./middleware/cognitoAuth');
 const resolveGymId = require('./middleware/resolveGymId');
+
+// Health check
+app.get('/api/health', (req, res) => {
+  res.json({ status: 'ok', timestamp: new Date().toISOString() });
+});
 
 // Routes
 app.use('/api/auth', authRoutes);
