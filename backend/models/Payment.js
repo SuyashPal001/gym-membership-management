@@ -34,6 +34,18 @@ const Payment = sequelize.define('Payment', {
   method: {
     type: DataTypes.STRING,
     allowNull: true
+  },
+  plan_name: {
+    type: DataTypes.STRING,
+    allowNull: true
+  },
+  membership_type_id: {
+    type: DataTypes.UUID,
+    allowNull: true,
+    references: {
+      model: 'membership_types',
+      key: 'id'
+    }
   }
 }, {
   tableName: 'payments',

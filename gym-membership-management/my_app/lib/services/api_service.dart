@@ -91,6 +91,12 @@ class ApiService {
     if (response.statusCode != 200) throw ApiException('Update failed', response.statusCode);
   }
 
+  static Future<void> deleteGymProfile() async {
+    final uri = Uri.parse('$baseUrl/gym');
+    final res = await _delete(uri);
+    if (res.statusCode != 200) throw ApiException('Delete failed', res.statusCode);
+  }
+
   // ─── Membership Types ───────────────────────────────────────────────────────
 
   static Future<List<MembershipType>> fetchMembershipTypes() async {
@@ -194,6 +200,12 @@ class ApiService {
     final uri = Uri.parse('$baseUrl/payments/$memberId');
     final response = await _post(uri);
     if (response.statusCode != 200) throw ApiException('Failed to mark payment as paid', response.statusCode);
+  }
+
+  static Future<List<MemberPayment>> fetchMemberPayments(String memberId) async {
+    final uri = Uri.parse('$baseUrl/members/$memberId/payments');
+    final data = _parseData(await _get(uri), 'Fetch failed');
+    return (data as List).map((e) => MemberPayment.fromJson(e)).toList();
   }
 
   // ─── Reminders ──────────────────────────────────────────────────────────────

@@ -24,8 +24,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
   bool _isLoading = true;
   bool _isSaving = false;
-  String? _editingField; 
-  String _originalValue = '';
+  bool _isGlobalEditing = false;
 
   @override
   void initState() {
@@ -59,7 +58,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
     }
   }
 
-  Future<void> _saveField(String fieldId) async {
+  Future<void> _saveAllFields() async {
     final studio = _studioNameController.text.trim();
     final owner  = _ownerNameController.text.trim();
 
@@ -77,12 +76,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
         'city':      _cityController.text.trim(),
         'state':     _stateController.text.trim(),
       });
-      if (fieldId == 'owner_name') globalOwnerName = owner;
+      globalOwnerName = owner;
       setState(() {
-        _editingField = null;
+        _isGlobalEditing = false;
         _isSaving     = false;
       });
-      _snack('${_humanize(fieldId)} Updated Successfully');
+      _snack('Profile Updated Successfully');
     } on ApiException catch (e) {
       _snack(e.message, error: true);
       setState(() => _isSaving = false);
@@ -148,19 +147,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
     ));
   }
 
-  void _startEditing(String fieldId, TextEditingController ctrl) {
-    HapticFeedback.mediumImpact();
+  void _cancelGlobalEditing() {
     setState(() {
-      _editingField  = fieldId;
-      _originalValue = ctrl.text;
+      _isGlobalEditing = false;
     });
-  }
-
-  void _cancelEditing(TextEditingController ctrl) {
-    setState(() {
-      ctrl.text     = _originalValue;
-      _editingField = null;
-    });
+    _loadProfile(); // Revert changes
   }
 
   @override
@@ -196,16 +187,14 @@ class _ProfileScreenState extends State<ProfileScreen> {
                             const SizedBox(height: 48),
                             _buildModuleHeader('IDENTITY'),
                             _buildModuleCard([
-                              _buildInteractiveRow(
+                              _buildInfoRow(
                                 title: 'STUDIO NAME',
                                 controller: _studioNameController,
-                                fieldId: 'studio_name',
                                 icon: Icons.auto_awesome_mosaic_rounded,
                               ),
-                              _buildInteractiveRow(
+                              _buildInfoRow(
                                 title: 'OWNER NAME',
                                 controller: _ownerNameController,
-                                fieldId: 'owner_name',
                                 icon: Icons.verified_user_rounded,
                                 isLast: true,
                               ),
@@ -213,21 +202,20 @@ class _ProfileScreenState extends State<ProfileScreen> {
                             const SizedBox(height: 32),
                             _buildModuleHeader('CONTACT & LOCATION'),
                             _buildModuleCard([
-                              _buildReadOnlyRow(
+                              _buildInfoRow(
                                 title: 'PRIMARY CONTACT',
-                                value: _phoneController.text,
+                                controller: _phoneController,
                                 icon: Icons.phone_iphone_rounded,
+                                isEditable: false,
                               ),
-                              _buildInteractiveRow(
+                              _buildInfoRow(
                                 title: 'LOCATION CITY',
                                 controller: _cityController,
-                                fieldId: 'city',
                                 icon: Icons.location_on_rounded,
                               ),
-                              _buildInteractiveRow(
+                              _buildInfoRow(
                                 title: 'STATE / PROVINCE',
                                 controller: _stateController,
-                                fieldId: 'state',
                                 icon: Icons.map_rounded,
                                 isLast: true,
                               ),
@@ -272,7 +260,87 @@ class _ProfileScreenState extends State<ProfileScreen> {
         ),
       ),
       centerTitle: true,
+      actions: [
+        PopupMenuButton<String>(
+          icon: const Icon(Icons.more_horiz_rounded, color: Colors.white, size: 22),
+          color: AppColors.cardBackground,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(14),
+            side: BorderSide(color: Colors.white.withOpacity(0.06)),
+          ),
+          offset: const Offset(0, 44),
+          onSelected: (value) {
+            if (value == 'refresh') _loadProfile();
+            if (value == 'edit') setState(() => _isGlobalEditing = true);
+            if (value == 'delete') _showDeleteConfirmation();
+          },
+          itemBuilder: (_) => [
+            PopupMenuItem(
+              value: 'refresh',
+              child: Row(children: [
+                Icon(Icons.refresh_rounded, color: Colors.white.withOpacity(0.7), size: 18),
+                const SizedBox(width: 12),
+                const Text('Refresh', style: TextStyle(color: Colors.white, fontSize: 14)),
+              ]),
+            ),
+            if (!_isGlobalEditing)
+              PopupMenuItem(
+                value: 'edit',
+                child: Row(children: [
+                  Icon(Icons.edit_rounded, color: Colors.white.withOpacity(0.7), size: 18),
+                  const SizedBox(width: 12),
+                  const Text('Edit Profile', style: TextStyle(color: Colors.white, fontSize: 14)),
+                ]),
+              ),
+            const PopupMenuDivider(height: 1),
+            PopupMenuItem(
+              value: 'delete',
+              child: Row(children: [
+                const Icon(Icons.delete_outline_rounded, color: AppColors.error, size: 18),
+                const SizedBox(width: 12),
+                Text('Delete', style: TextStyle(color: AppColors.error, fontSize: 14, fontWeight: FontWeight.w600)),
+              ]),
+            ),
+          ],
+        ),
+      ],
     );
+  }
+
+  Future<void> _showDeleteConfirmation() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.cardBackground,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Text('Delete Account', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700)),
+        content: const Text('This will permanently delete your studio profile and all associated data. This action cannot be undone.',
+            style: TextStyle(color: AppColors.secondaryText)),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('CANCEL', style: TextStyle(color: AppColors.secondaryText)),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('DELETE', style: TextStyle(color: AppColors.error, fontWeight: FontWeight.w800)),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    
+    try {
+      await ApiService.deleteGymProfile();
+      if (mounted) {
+        _snack('Account deleted successfully');
+        Navigator.of(context).pushNamedAndRemoveUntil('/login', (route) => false);
+      }
+    } on ApiException catch (e) {
+      if (mounted) _snack(e.message, error: true);
+    } catch (_) {
+      if (mounted) _snack('Failed to delete account', error: true);
+    }
   }
 
   Widget _buildNeuralHeader() {
@@ -418,134 +486,28 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
   }
 
-  Widget _buildInteractiveRow({
+  Widget _buildInfoRow({
     required String title,
     required TextEditingController controller,
-    required String fieldId,
     required IconData icon,
     bool isLast = false,
+    bool isEditable = true,
   }) {
-    final bool isEditing = _editingField == fieldId;
+    final bool activeEdit = _isGlobalEditing && isEditable;
 
     return Column(
       children: [
         AnimatedContainer(
-          duration: const Duration(milliseconds: 200),
-          decoration: BoxDecoration(
-            color: isEditing ? AppColors.primaryBlue.withOpacity(0.05) : Colors.transparent,
-          ),
-          child: InkWell(
-            onTap: isEditing ? null : () => _startEditing(fieldId, controller),
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
-              child: Row(
-                children: [
-                  Icon(
-                    icon, 
-                    size: 20, 
-                    color: isEditing ? AppColors.primaryBlue : AppColors.secondaryText.withOpacity(0.4)
-                  ),
-                  const SizedBox(width: 20),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          title,
-                          style: GoogleFonts.outfit(
-                            fontSize: 8,
-                            fontWeight: FontWeight.w900,
-                            letterSpacing: 1.5,
-                            color: isEditing ? AppColors.primaryBlue : AppColors.secondaryText.withOpacity(0.5),
-                          ),
-                        ),
-                        const SizedBox(height: 6),
-                        if (isEditing)
-                          TextField(
-                            controller: controller,
-                            autofocus: true,
-                            style: GoogleFonts.outfit(
-                              fontSize: 16,
-                              fontWeight: FontWeight.w600,
-                              color: Colors.white,
-                            ),
-                            decoration: const InputDecoration(
-                              isDense: true,
-                              contentPadding: EdgeInsets.zero,
-                              border: InputBorder.none,
-                            ),
-                            onSubmitted: (_) => _saveField(fieldId),
-                          )
-                        else
-                          Text(
-                            controller.text.isEmpty ? '—' : controller.text,
-                            style: GoogleFonts.outfit(
-                              fontSize: 16,
-                              fontWeight: FontWeight.w600,
-                              color: Colors.white.withOpacity(0.9),
-                              letterSpacing: 0.2,
-                            ),
-                          ),
-                      ],
-                    ),
-                  ),
-                  if (isEditing)
-                    Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        GestureDetector(
-                          onTap: () => _cancelEditing(controller),
-                          child: Container(
-                            padding: const EdgeInsets.all(6),
-                            decoration: BoxDecoration(
-                              color: Colors.white.withOpacity(0.05),
-                              shape: BoxShape.circle,
-                            ),
-                            child: Icon(Icons.close_rounded, color: AppColors.secondaryText, size: 18),
-                          ),
-                        ),
-                        const SizedBox(width: 12),
-                        _isSaving
-                            ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.primaryBlue))
-                            : GestureDetector(
-                                onTap: () => _saveField(fieldId),
-                                child: Container(
-                                  padding: const EdgeInsets.all(6),
-                                  decoration: BoxDecoration(
-                                    color: AppColors.primaryBlue.withOpacity(0.1),
-                                    shape: BoxShape.circle,
-                                  ),
-                                  child: Icon(Icons.check_rounded, color: AppColors.primaryBlue, size: 18),
-                                ),
-                              ),
-                      ],
-                    )
-                  else
-                    Icon(Icons.edit_note_rounded, color: Colors.white.withOpacity(0.2), size: 18),
-                ],
-              ),
-            ),
-          ),
-        ),
-        if (!isLast)
-          Divider(color: Colors.white.withOpacity(0.02), height: 1, indent: 64),
-      ],
-    );
-  }
-
-  Widget _buildReadOnlyRow({
-    required String title,
-    required String value,
-    required IconData icon,
-    bool isLast = false,
-  }) {
-    return Column(
-      children: [
-        Padding(
+          duration: const Duration(milliseconds: 300),
           padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
+          decoration: BoxDecoration(
+            color: activeEdit ? AppColors.primaryBlue.withOpacity(0.03) : Colors.transparent,
+            border: activeEdit ? Border.all(color: AppColors.primaryBlue.withOpacity(0.2), width: 1) : null,
+            borderRadius: activeEdit ? BorderRadius.circular(16) : null,
+          ),
           child: Row(
             children: [
-              Icon(icon, size: 20, color: AppColors.secondaryText.withOpacity(0.2)),
+              Icon(icon, size: 20, color: activeEdit ? AppColors.primaryBlue : AppColors.secondaryText.withOpacity(0.4)),
               const SizedBox(width: 20),
               Expanded(
                 child: Column(
@@ -557,32 +519,81 @@ class _ProfileScreenState extends State<ProfileScreen> {
                         fontSize: 8,
                         fontWeight: FontWeight.w900,
                         letterSpacing: 1.5,
-                        color: AppColors.secondaryText.withOpacity(0.3),
+                        color: activeEdit ? AppColors.primaryBlue : AppColors.secondaryText.withOpacity(0.5),
                       ),
                     ),
                     const SizedBox(height: 6),
-                    Text(
-                      value.isEmpty ? '—' : value,
-                      style: GoogleFonts.outfit(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w600,
-                        color: AppColors.secondaryText.withOpacity(0.3),
+                    if (activeEdit)
+                      TextField(
+                        controller: controller,
+                        style: GoogleFonts.outfit(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w600,
+                          color: Colors.white,
+                        ),
+                        decoration: const InputDecoration(
+                          isDense: true,
+                          contentPadding: EdgeInsets.zero,
+                          border: InputBorder.none,
+                        ),
+                      )
+                    else
+                      Text(
+                        controller.text.isEmpty ? '—' : controller.text,
+                        style: GoogleFonts.outfit(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w600,
+                          color: isEditable ? Colors.white.withOpacity(0.9) : AppColors.secondaryText.withOpacity(0.3),
+                          letterSpacing: 0.2,
+                        ),
                       ),
-                    ),
                   ],
                 ),
               ),
-              Icon(Icons.lock_person_rounded, color: Colors.white.withOpacity(0.05), size: 16),
+              if (!isEditable && _isGlobalEditing)
+                Icon(Icons.lock_rounded, color: Colors.white.withOpacity(0.05), size: 14),
             ],
           ),
         ),
-        if (!isLast)
+        if (!isLast && !activeEdit)
           Divider(color: Colors.white.withOpacity(0.02), height: 1, indent: 64),
       ],
     );
   }
 
   Widget _buildFooter() {
+    if (_isGlobalEditing) {
+      return Row(
+        children: [
+          Expanded(
+            child: TextButton(
+              onPressed: _cancelGlobalEditing,
+              style: TextButton.styleFrom(
+                padding: const EdgeInsets.symmetric(vertical: 18),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+              ),
+              child: Text('CANCEL', style: GoogleFonts.outfit(color: AppColors.secondaryText, fontWeight: FontWeight.w800, fontSize: 13, letterSpacing: 1.0)),
+            ),
+          ),
+          const SizedBox(width: 16),
+          Expanded(
+            child: ElevatedButton(
+              onPressed: _isSaving ? null : _saveAllFields,
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.accent,
+                padding: const EdgeInsets.symmetric(vertical: 18),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                elevation: 0,
+              ),
+              child: _isSaving
+                  ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.black))
+                  : Text('SAVE CHANGES', style: GoogleFonts.outfit(fontWeight: FontWeight.w800, letterSpacing: 1.0, fontSize: 13, color: Colors.black)),
+            ),
+          ),
+        ],
+      );
+    }
+
     return Column(
       children: [
         Container(

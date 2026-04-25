@@ -45,7 +45,7 @@ class _StaffDetailScreenState extends State<StaffDetailScreen> {
       builder: (ctx) => AlertDialog(
         backgroundColor: AppColors.cardBackground,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: const Text('Remove Staff Member', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700)),
+        title: const Text('Delete Staff Member', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700)),
         content: const Text('This will remove them from the active staff list. Are you sure?',
             style: TextStyle(color: AppColors.secondaryText)),
         actions: [
@@ -55,7 +55,7 @@ class _StaffDetailScreenState extends State<StaffDetailScreen> {
           ),
           TextButton(
             onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('REMOVE', style: TextStyle(color: AppColors.error, fontWeight: FontWeight.w800)),
+            child: const Text('DELETE', style: TextStyle(color: AppColors.error, fontWeight: FontWeight.w800)),
           ),
         ],
       ),
@@ -311,7 +311,7 @@ class _StaffDetailScreenState extends State<StaffDetailScreen> {
                 child: Row(children: [
                   const Icon(Icons.delete_outline_rounded, color: AppColors.error, size: 18),
                   const SizedBox(width: 12),
-                  Text('Remove', style: TextStyle(color: AppColors.error, fontSize: 14, fontWeight: FontWeight.w600)),
+                  Text('Delete', style: TextStyle(color: AppColors.error, fontSize: 14, fontWeight: FontWeight.w600)),
                 ]),
               ),
             ],
@@ -598,21 +598,21 @@ class _StaffDetailScreenState extends State<StaffDetailScreen> {
             ),
           ]),
           if (!isPaid) ...[
-            const SizedBox(height: 20),
+            const SizedBox(height: 24),
             SizedBox(
               width: double.infinity,
+              height: 35,
               child: ElevatedButton(
                 onPressed: _markingPaid ? null : _markSalaryPaid,
                 style: ElevatedButton.styleFrom(
                   backgroundColor: AppColors.accent,
                   foregroundColor: Colors.black,
-                  padding: const EdgeInsets.symmetric(vertical: 15),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                   elevation: 0,
                 ),
                 child: _markingPaid
-                    ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.black))
-                    : const Text('MARK AS PAID', style: TextStyle(fontWeight: FontWeight.w900, letterSpacing: 1.0, fontSize: 14)),
+                    ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.black))
+                    : Text('MARK AS PAID', style: GoogleFonts.outfit(fontWeight: FontWeight.w900, letterSpacing: 0.8, fontSize: 12)),
               ),
             ),
           ],

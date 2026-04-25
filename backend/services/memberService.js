@@ -181,7 +181,9 @@ const memberService = {
         amount: membershipType.amount,
         status: 'paid',
         payment_date: dayjs.utc().toDate(),
-        method: 'enrollment'
+        method: 'enrollment',
+        plan_name: membershipType.name,
+        membership_type_id: membershipType.id
       });
     }
 
@@ -316,7 +318,9 @@ const memberService = {
       amount: membershipType.amount,
       status: 'paid',
       payment_date: dayjs.utc().toDate(),
-      method: wasTrialConversion ? 'trial_conversion' : 'renewal'
+      method: wasTrialConversion ? 'trial_conversion' : 'renewal',
+      plan_name: membershipType.name,
+      membership_type_id: membershipType.id
     });
 
     // Clear old reminders and setup new ones
@@ -497,6 +501,8 @@ const memberService = {
       amount: planAmount,
       status: 'paid',
       payment_date: dayjs.utc().toDate(),
+      plan_name: member.MembershipType ? member.MembershipType.name : 'Custom Plan',
+      membership_type_id: member.membership_type_id
     });
 
     const isExpired = member.status === 'expired' ||
@@ -578,6 +584,27 @@ const memberService = {
     });
 
     return { monthly_collected: monthlyCollected || 0 };
+  },
+
+  getMemberPayments: async (gym_id, member_id) => {
+    const member = await Member.findByPk(member_id, {
+      include: [{ model: MembershipType, attributes: ['name'] }]
+    });
+
+    const payments = await Payment.findAll({
+      where: { gym_id, member_id },
+      include: [{ model: MembershipType, attributes: ['name', 'duration_months'] }],
+      order: [['payment_date', 'DESC']]
+    });
+
+    return payments.map(p => {
+      const plain = p.toJSON();
+      // Intelligent fallback for legacy records that don't have plan_name or membership_type_id populated
+      if (!plain.plan_name && !plain.MembershipType && member && member.MembershipType) {
+        plain.plan_name = member.MembershipType.name;
+      }
+      return plain;
+    });
   },
 };
 
