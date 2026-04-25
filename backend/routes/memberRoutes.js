@@ -279,4 +279,15 @@ router.get('/:member_id/attendance-history', async (req, res) => {
   }
 });
 
+// GET /api/members/:member_id/payments
+router.get('/:member_id/payments', async (req, res) => {
+  try {
+    const { member_id } = req.params;
+    const payments = await memberService.getMemberPayments(req.gymId, member_id);
+    res.json({ success: true, data: payments });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
 module.exports = router;

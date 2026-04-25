@@ -135,3 +135,36 @@ class PaymentSummary {
     );
   }
 }
+
+class MemberPayment {
+  final String id;
+  final double amount;
+  final String status;
+  final String paymentDate;
+  final String? method;
+  final String? planName;
+  final int? durationMonths;
+
+  MemberPayment({
+    required this.id,
+    required this.amount,
+    required this.status,
+    required this.paymentDate,
+    this.method,
+    this.planName,
+    this.durationMonths,
+  });
+
+  factory MemberPayment.fromJson(Map<String, dynamic> json) {
+    final membership = json['MembershipType'] as Map<String, dynamic>?;
+    return MemberPayment(
+      id: json['id']?.toString() ?? '',
+      amount: (json['amount'] ?? 0).toDouble(),
+      status: json['status'] ?? 'paid',
+      paymentDate: json['payment_date'] ?? '',
+      method: json['method'],
+      planName: membership?['name'] ?? json['plan_name'],
+      durationMonths: membership?['duration_months'],
+    );
+  }
+}

@@ -10,6 +10,8 @@ import '../services/api_service.dart';
 import '../constants/app_colors.dart';
 import 'reminder_history_screen.dart';
 import 'attendance_history_screen.dart';
+import 'payment_history_screen.dart';
+import '../models/payment_models.dart';
 
 String _planLabel(Member? member) {
   if (member == null) return '—';
@@ -45,6 +47,7 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
 
   AttendanceSummary? _attendanceSummary;
   List<ReminderHistory>? _reminders;
+  List<MemberPayment>? _payments;
   bool _isLoading = true;
   String? _error;
 
@@ -60,10 +63,12 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
       final results = await Future.wait([
         ApiService.fetchMemberAttendanceSummary(_memberId),
         ApiService.fetchReminderHistory(_memberId),
+        ApiService.fetchMemberPayments(_memberId),
       ]);
       setState(() {
         _attendanceSummary = results[0] as AttendanceSummary;
         _reminders = results[1] as List<ReminderHistory>;
+        _payments = results[2] as List<MemberPayment>;
         _error = null;
       });
     } catch (e) {
@@ -218,26 +223,146 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
   Future<void> _showDeleteConfirmation() async {
     final confirmed = await showDialog<bool>(
       context: context,
-      builder: (context) => AlertDialog(
+      builder: (ctx) => AlertDialog(
         backgroundColor: AppColors.cardBackground,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: Text("Delete Member", style: TextStyle(color: AppColors.primaryText, fontWeight: FontWeight.bold)),
-        content: Text("Remove ${widget.memberName} permanently?"),
+        title: const Text('Delete Member', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700)),
+        content: Text('This will remove ${widget.memberName} permanently. Are you sure?',
+            style: const TextStyle(color: AppColors.secondaryText)),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(context, false), child: Text("CANCEL", style: TextStyle(color: AppColors.secondaryText))),
-          TextButton(onPressed: () => Navigator.pop(context, true), child: Text("DELETE", style: TextStyle(color: AppColors.error))),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('CANCEL', style: TextStyle(color: AppColors.secondaryText)),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('DELETE', style: TextStyle(color: AppColors.error, fontWeight: FontWeight.w800)),
+          ),
         ],
       ),
     );
-    if (confirmed == true) {
-      try {
-        await ApiService.deleteMember(_memberId);
-        Navigator.pop(context, true);
-      } catch (e) {
-        _showSnackbar("Error deleting member: $e", AppColors.error);
-      }
+    if (confirmed != true) return;
+    
+    try {
+      await ApiService.deleteMember(_memberId);
+      if (mounted) Navigator.pop(context, true);
+    } on ApiException catch (e) {
+      if (mounted) _showSnackbar(e.message, AppColors.error);
+    } catch (e) {
+      if (mounted) _showSnackbar("Error deleting member: $e", AppColors.error);
     }
   }
+
+  void _showEditSheet() {
+    if (widget.member == null) return;
+    final m = widget.member!;
+    final nameCtrl = TextEditingController(text: m.memberName);
+    String rawPhone = m.phone ?? '';
+    if (rawPhone.startsWith('+91')) rawPhone = rawPhone.substring(3);
+    final phoneCtrl = TextEditingController(text: rawPhone);
+    bool saving = false;
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setSheetState) => Padding(
+          padding: EdgeInsets.only(bottom: MediaQuery.of(ctx).viewInsets.bottom),
+          child: Container(
+            padding: const EdgeInsets.fromLTRB(24, 20, 24, 32),
+            decoration: BoxDecoration(
+              color: AppColors.cardBackground,
+              borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+              border: Border.all(color: Colors.white.withOpacity(0.05)),
+            ),
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Center(child: Container(width: 32, height: 4, decoration: BoxDecoration(color: Colors.white12, borderRadius: BorderRadius.circular(2)))),
+                  const SizedBox(height: 20),
+                  Text('EDIT MEMBER PROFILE',
+                    style: GoogleFonts.outfit(color: Colors.white, fontSize: 15, fontWeight: FontWeight.w800, letterSpacing: 0.8)),
+                  const SizedBox(height: 24),
+                  Container(
+                    decoration: BoxDecoration(
+                      color: AppColors.cardBackground.withOpacity(0.8),
+                      borderRadius: BorderRadius.circular(28),
+                      border: Border.all(color: Colors.white.withOpacity(0.08), width: 0.5),
+                    ),
+                    child: Column(
+                      children: [
+                        _buildPremiumField("Full Name", Icons.person_outline_rounded, nameCtrl),
+                        _divider(),
+                        _buildPremiumField("Phone Number", Icons.phone_iphone_rounded, phoneCtrl, keyboardType: TextInputType.number),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 32),
+                  SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton(
+                      onPressed: saving ? null : () async {
+                        setSheetState(() => saving = true);
+                        try {
+                          await ApiService.updateMember(m.id!, {
+                            'name': nameCtrl.text.trim(),
+                            'phone': '+91${phoneCtrl.text.trim()}',
+                          });
+                          if (mounted) Navigator.pop(ctx);
+                          _loadAllData();
+                        } on ApiException catch (e) {
+                          if (mounted) ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(content: Text(e.message), backgroundColor: AppColors.error));
+                        } catch (_) {
+                          if (mounted) ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(content: Text('Update failed'), backgroundColor: AppColors.error));
+                        } finally {
+                          setSheetState(() => saving = false);
+                        }
+                      },
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppColors.accent,
+                        padding: const EdgeInsets.symmetric(vertical: 18),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                        elevation: 0,
+                      ),
+                      child: saving
+                          ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.black))
+                          : Text('SAVE CHANGES', style: GoogleFonts.outfit(fontWeight: FontWeight.w800, letterSpacing: 1.0, fontSize: 14, color: Colors.black)),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildPremiumField(String label, IconData icon, TextEditingController ctrl, {TextInputType? keyboardType}) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+      child: TextField(
+        controller: ctrl,
+        keyboardType: keyboardType,
+        style: GoogleFonts.outfit(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w600),
+        decoration: InputDecoration(
+          hintText: label,
+          hintStyle: GoogleFonts.outfit(color: AppColors.secondaryText.withOpacity(0.4), fontSize: 15),
+          prefixIcon: Icon(icon, color: AppColors.secondaryText.withOpacity(0.6), size: 20),
+          border: InputBorder.none,
+          contentPadding: const EdgeInsets.symmetric(vertical: 18),
+        ),
+      ),
+    );
+  }
+
+  Widget _divider() => Divider(color: Colors.white.withOpacity(0.05), height: 1, indent: 48);
+
 
   @override
   Widget build(BuildContext context) {
@@ -254,14 +379,43 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
         centerTitle: true,
         actions: [
           PopupMenuButton<String>(
-            icon: Icon(Icons.more_horiz, color: AppColors.primaryText),
+            icon: const Icon(Icons.more_horiz_rounded, color: Colors.white, size: 22),
             color: AppColors.cardBackground,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-            onSelected: (val) { if (val == 'delete') _showDeleteConfirmation(); },
-            itemBuilder: (context) => [
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(14),
+              side: BorderSide(color: Colors.white.withOpacity(0.06)),
+            ),
+            offset: const Offset(0, 44),
+            onSelected: (value) {
+              if (value == 'refresh') _loadAllData();
+              if (value == 'edit') _showEditSheet();
+              if (value == 'delete') _showDeleteConfirmation();
+            },
+            itemBuilder: (_) => [
+              PopupMenuItem(
+                value: 'refresh',
+                child: Row(children: [
+                  Icon(Icons.refresh_rounded, color: Colors.white.withOpacity(0.7), size: 18),
+                  const SizedBox(width: 12),
+                  const Text('Refresh', style: TextStyle(color: Colors.white, fontSize: 14)),
+                ]),
+              ),
+              PopupMenuItem(
+                value: 'edit',
+                child: Row(children: [
+                  Icon(Icons.edit_rounded, color: Colors.white.withOpacity(0.7), size: 18),
+                  const SizedBox(width: 12),
+                  const Text('Edit Profile', style: TextStyle(color: Colors.white, fontSize: 14)),
+                ]),
+              ),
+              const PopupMenuDivider(height: 1),
               PopupMenuItem(
                 value: 'delete',
-                child: Row(children: [Icon(Icons.delete_outline, color: AppColors.error, size: 18), SizedBox(width: 8), Text("DELETE MEMBER", style: TextStyle(color: AppColors.error, fontSize: 10, fontWeight: FontWeight.w900))]),
+                child: Row(children: [
+                  const Icon(Icons.delete_outline_rounded, color: AppColors.error, size: 18),
+                  const SizedBox(width: 12),
+                  Text('Delete', style: TextStyle(color: AppColors.error, fontSize: 14, fontWeight: FontWeight.w600)),
+                ]),
               ),
             ],
           ),
@@ -293,6 +447,8 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
           SizedBox(height: 32),
           _buildSectionHeader("COMMUNICATION LOG"),
           _buildReminderHistoryCard(),
+          SizedBox(height: 32),
+          _buildPaymentHistorySummary(),
           SizedBox(height: 60),
         ],
       ),
@@ -659,7 +815,7 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
 
     return Container(
       width: double.infinity,
-      padding: EdgeInsets.all(20),
+      padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
         color: AppColors.cardBackground,
         borderRadius: BorderRadius.circular(20),
@@ -670,35 +826,35 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
         children: [
           Row(
             children: [
-              Icon(Icons.history_toggle_off_rounded, color: AppColors.primaryBlue, size: 18),
-              SizedBox(width: 8),
-              Text(
+              const Icon(Icons.history_toggle_off_rounded, color: AppColors.primaryBlue, size: 18),
+              const SizedBox(width: 8),
+              const Text(
                 "RECENT ACTIVITY",
                 style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w900),
               ),
             ],
           ),
-          SizedBox(height: 20),
+          const SizedBox(height: 20),
           Text(
             latest != null
                 ? "Last ${latest.method.toUpperCase()} reminder sent on ${latest.scheduledDate}"
                 : "No communication logged for this warrior yet.",
-            style: TextStyle(color: AppColors.secondaryText, fontSize: 13, height: 1.5),
+            style: const TextStyle(color: AppColors.secondaryText, fontSize: 13, height: 1.5),
           ),
-          SizedBox(height: 20),
+          const SizedBox(height: 20),
           InkWell(
             onTap: () {
               Navigator.push(context, MaterialPageRoute(builder: (context) => ReminderHistoryScreen(memberId: _memberId)));
             },
             child: Container(
-              padding: EdgeInsets.symmetric(vertical: 12),
+              padding: const EdgeInsets.symmetric(vertical: 12),
               width: double.infinity,
               decoration: BoxDecoration(
                 color: AppColors.border.withOpacity(0.3),
                 borderRadius: BorderRadius.circular(12),
               ),
               alignment: Alignment.center,
-              child: Text(
+              child: const Text(
                 "VIEW FULL LOGS",
                 style: TextStyle(
                   color: AppColors.primaryBlue,
@@ -711,6 +867,103 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
           ),
         ],
       ),
+    );
+  }
+
+  Widget _buildPaymentHistorySummary() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            _buildSectionHeader("PAYMENT HISTORY"),
+            TextButton(
+              onPressed: () => Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => PaymentHistoryScreen(
+                    memberId: _memberId,
+                    memberName: widget.memberName,
+                  ),
+                ),
+              ),
+              child: Text(
+                "VIEW ALL",
+                style: GoogleFonts.outfit(
+                  color: AppColors.primaryBlue,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w900,
+                  letterSpacing: 1.0,
+                ),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 12),
+        if (_payments == null || _payments!.isEmpty)
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(24),
+            decoration: BoxDecoration(
+              color: AppColors.cardBackground,
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(color: AppColors.border),
+            ),
+            child: Text(
+              "No payment history available",
+              textAlign: TextAlign.center,
+              style: GoogleFonts.outfit(color: AppColors.secondaryText, fontSize: 13),
+            ),
+          )
+        else
+          Builder(builder: (ctx) {
+            final last = _payments!.first;
+            final dt = DateTime.tryParse(last.paymentDate);
+            final fmtDate = dt != null ? DateFormat('dd MMM yyyy').format(dt) : last.paymentDate;
+            
+            return Container(
+              padding: const EdgeInsets.all(20),
+              decoration: BoxDecoration(
+                color: AppColors.cardBackground,
+                borderRadius: BorderRadius.circular(24),
+                border: Border.all(color: AppColors.border),
+              ),
+              child: Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: AppColors.emerald.withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                    child: const Icon(Icons.receipt_long_rounded, color: AppColors.emerald, size: 20),
+                  ),
+                  const SizedBox(width: 16),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          last.planName ?? "Membership Payment",
+                          style: GoogleFonts.outfit(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 15),
+                        ),
+                        Text(
+                          "Last paid: $fmtDate",
+                          style: GoogleFonts.outfit(color: AppColors.secondaryText, fontSize: 12),
+                        ),
+                      ],
+                    ),
+                  ),
+                  Text(
+                    "₹${last.amount.toInt()}",
+                    style: GoogleFonts.outfit(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 18),
+                  ),
+                ],
+              ),
+            );
+          }),
+      ],
     );
   }
 }
