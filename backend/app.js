@@ -84,6 +84,11 @@ cron.schedule('0 0 * * *', () => {
     .catch((err) => console.error('[CRON] Membership expiry sweep failed:', err.message));
 });
 
+// OAuth callback — must serve callback.html so the popup can postMessage the code back
+app.get('/auth/callback', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'callback.html'));
+});
+
 // Catch-all: serve Flutter index.html for any non-API route (client-side routing)
 app.get('*', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
