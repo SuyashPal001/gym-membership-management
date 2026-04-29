@@ -211,7 +211,7 @@ class ApiConfig {
       final isLocalhost = base.host == 'localhost' || base.host == '127.0.0.1';
       final origin = isLocalhost
           ? '${base.scheme}://localhost:8080'
-          : '${base.scheme}://${base.host}';
+          : base.origin;
       return '$origin/auth/callback';
     }
     return 'com.gymops.app://callback';
