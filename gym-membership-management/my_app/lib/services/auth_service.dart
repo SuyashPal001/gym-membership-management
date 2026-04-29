@@ -229,9 +229,11 @@ class AuthService {
 
         return idToken;
       } else {
+        debugPrint('AuthService: token exchange failed ${response.statusCode}: ${response.body}');
         return null;
       }
     } catch (e) {
+      debugPrint('AuthService: token exchange exception: $e');
       return null;
     }
   }
