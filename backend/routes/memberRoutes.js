@@ -231,13 +231,13 @@ router.get('/:member_id/attendance-summary', async (req, res) => {
     if (!member) throw new Error('Member not found');
 
     const [total_visits, lastSession, currentPaymentsLtv] = await Promise.all([
-      AttendanceSession.count({ where: { member_id } }),
+      AttendanceSession.count({ where: { member_id, gym_id: req.gymId } }),
       AttendanceSession.findOne({
-        where: { member_id },
+        where: { member_id, gym_id: req.gymId },
         order: [['check_in_time', 'DESC']]
       }),
       Payment.sum('amount', {
-        where: { member_id, status: 'paid' }
+        where: { member_id, gym_id: req.gymId, status: 'paid' }
       })
     ]);
 
