@@ -146,7 +146,7 @@ class AuthService {
       // 4. Mobile: Setup deep link listener then launch browser
       _linkSubscription?.cancel();
       _linkSubscription = _appLinks.uriLinkStream.listen((uri) async {
-        if (uri.scheme == 'myapp' && uri.host == 'callback') {
+        if (uri.scheme == 'com.gymops.app' && uri.host == 'callback') {
           final code = uri.queryParameters['code'];
           final savedVerifier = (await SharedPreferences.getInstance()).getString(_verifierKey);
 
@@ -198,19 +198,22 @@ class AuthService {
     try {
       final domain = ApiConfig.cognitoDomain.replaceFirst('https://', '');
       final tokenUri = Uri.https(domain, '/oauth2/token');
-      final effectiveRedirectUri = redirectUri ?? 'myapp://callback';
+      final effectiveRedirectUri = redirectUri ?? 'com.gymops.app://callback';
 
+      final body = {
+        'client_id': ApiConfig.cognitoClientId,
+        'code': code,
+        'code_verifier': verifier,
+        'grant_type': 'authorization_code',
+        'redirect_uri': effectiveRedirectUri,
+      };
+      if (ApiConfig.cognitoClientSecret.isNotEmpty) {
+        body['client_secret'] = ApiConfig.cognitoClientSecret;
+      }
       final response = await http.post(
         tokenUri,
         headers: {'Content-Type': 'application/x-www-form-urlencoded'},
-        body: {
-          'client_id': ApiConfig.cognitoClientId,
-          'client_secret': ApiConfig.cognitoClientSecret,
-          'code': code,
-          'code_verifier': verifier,
-          'grant_type': 'authorization_code',
-          'redirect_uri': effectiveRedirectUri,
-        },
+        body: body,
       );
 
       if (response.statusCode == 200) {

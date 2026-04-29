@@ -587,7 +587,8 @@ const memberService = {
   },
 
   getMemberPayments: async (gym_id, member_id) => {
-    const member = await Member.findByPk(member_id, {
+    const member = await Member.findOne({
+      where: { id: member_id, gym_id },
       include: [{ model: MembershipType, attributes: ['name'] }]
     });
 

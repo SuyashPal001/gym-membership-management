@@ -8,3 +8,10 @@ build/
 .flutter-plugins
 .flutter-plugins-dependencies
 *.md
+
+# Claude Code local settings
+.claude/settings.local.json
+
+# Local copies at repo root
+/landing/
+/my_app/
