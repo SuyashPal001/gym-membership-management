@@ -199,9 +199,11 @@ class ApiConfig {
   static const String cognitoClientId = '3133ldc1jrvu87ka18ce56fto9';
   static const String cognitoDomain = 'ap-south-1fujnjpibc.auth.ap-south-1.amazoncognito.com';
   static const String cognitoRegion = 'ap-south-1';
-  static const String googleClientIdAndroid = '129404364493-jfeepuki379ejj12rmt2vmn5tq2uh395.apps.googleusercontent.com';
-  static const String googleClientIdWeb = '129404364493-go4260bf4t222nlqrbe7ijrtb5lfnl26.apps.googleusercontent.com';
-  static const String cognitoClientSecret = '5c9il77h6j2jrhbkp3snphrdppfjc1mjglpkrqegs5osqge2q0d';
+
+  // Injected at build time: flutter build appbundle --dart-define=COGNITO_CLIENT_SECRET=<value>
+  // Leave empty to omit the secret (required when the Cognito App Client has no secret configured).
+  static const String cognitoClientSecret =
+      String.fromEnvironment('COGNITO_CLIENT_SECRET', defaultValue: '');
 
   static String get redirectUri {
     if (kIsWeb) {
@@ -212,6 +214,6 @@ class ApiConfig {
           : '${base.scheme}://${base.host}';
       return '$origin/auth/callback';
     }
-    return 'myapp://callback';
+    return 'com.gymops.app://callback';
   }
 }

@@ -1,5 +1,5 @@
 name: my_app
-description: "An Uber-inspired Flutter web application."
+description: "Gym Ops - Gym Membership Management Platform"
 publish_to: 'none'
 
 version: 1.0.0+1
@@ -18,7 +18,6 @@ dependencies:
   speech_to_text: ^7.3.0
   flutter_tts: ^4.2.5
   just_audio: ^0.9.36
-  google_sign_in: ^6.2.1
   url_launcher: ^6.3.0
   app_links: ^6.3.2
   crypto: ^3.0.3
@@ -29,6 +28,13 @@ dev_dependencies:
   flutter_test:
     sdk: flutter
   flutter_lints: ^4.0.0
+  flutter_launcher_icons: ^0.13.1
+
+flutter_launcher_icons:
+  android: "launcher_icon"
+  ios: true
+  image_path: "playstore_icon.png"
+  min_sdk_android: 21
 
 flutter:
   uses-material-design: true
