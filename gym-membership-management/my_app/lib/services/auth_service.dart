@@ -196,24 +196,17 @@ class AuthService {
     String? redirectUri,
   }) async {
     try {
-      final domain = ApiConfig.cognitoDomain.replaceFirst('https://', '');
-      final tokenUri = Uri.https(domain, '/oauth2/token');
       final effectiveRedirectUri = redirectUri ?? 'com.gymops.app://callback';
+      final exchangeUri = Uri.parse('${ApiConfig.apiOrigin}/api/auth/exchange');
 
-      final body = {
-        'client_id': ApiConfig.cognitoClientId,
-        'code': code,
-        'code_verifier': verifier,
-        'grant_type': 'authorization_code',
-        'redirect_uri': effectiveRedirectUri,
-      };
-      if (ApiConfig.cognitoClientSecret.isNotEmpty) {
-        body['client_secret'] = ApiConfig.cognitoClientSecret;
-      }
       final response = await http.post(
-        tokenUri,
-        headers: {'Content-Type': 'application/x-www-form-urlencoded'},
-        body: body,
+        exchangeUri,
+        headers: {'Content-Type': 'application/json'},
+        body: json.encode({
+          'code': code,
+          'code_verifier': verifier,
+          'redirect_uri': effectiveRedirectUri,
+        }),
       );
 
       if (response.statusCode == 200) {
