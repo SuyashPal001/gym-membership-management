@@ -44,5 +44,20 @@ app.*.map.json
 /android/app/profile
 /android/app/release
 
-# Secrets — never commit this file
+# Secrets — never commit these files
 secrets.json
+android/key.properties
+*.jks
+*.keystore
+google-services.json
+GoogleService-Info.plist
+
+# Windows metadata
+desktop.ini
+
+# Local utility scripts
+check_size.ps1
+create_icon.ps1
+resize_icon.ps1
+make_gold.ps1
+*.ps1
