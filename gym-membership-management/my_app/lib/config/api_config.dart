@@ -195,13 +195,14 @@ class ApiConfig {
 
   static String get apiOrigin => Uri.parse(baseUrl).origin;
 
-  static const String cognitoUserPoolId = 'ap-south-1_fujnJpibc';
-  static const String cognitoClientId = '3133ldc1jrvu87ka18ce56fto9';
-  static const String cognitoDomain = 'ap-south-1fujnjpibc.auth.ap-south-1.amazoncognito.com';
-  static const String cognitoRegion = 'ap-south-1';
-
-  // Injected at build time: flutter build appbundle --dart-define=COGNITO_CLIENT_SECRET=<value>
-  // Leave empty to omit the secret (required when the Cognito App Client has no secret configured).
+  static const String cognitoUserPoolId =
+      String.fromEnvironment('COGNITO_USER_POOL_ID', defaultValue: '');
+  static const String cognitoClientId =
+      String.fromEnvironment('COGNITO_CLIENT_ID', defaultValue: '');
+  static const String cognitoDomain =
+      String.fromEnvironment('COGNITO_DOMAIN', defaultValue: '');
+  static const String cognitoRegion =
+      String.fromEnvironment('COGNITO_REGION', defaultValue: '');
   static const String cognitoClientSecret =
       String.fromEnvironment('COGNITO_CLIENT_SECRET', defaultValue: '');
 
