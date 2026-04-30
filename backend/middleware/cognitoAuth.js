@@ -1,10 +1,17 @@
 const { CognitoJwtVerifier } = require('aws-jwt-verify');
 
-const verifier = CognitoJwtVerifier.create({
-  userPoolId: process.env.COGNITO_USER_POOL_ID,
-  tokenUse: null, // Allow both 'id' and 'access' tokens
-  clientId: process.env.COGNITO_CLIENT_ID,
-});
+let verifier = null;
+
+function getVerifier() {
+  if (!verifier) {
+    verifier = CognitoJwtVerifier.create({
+      userPoolId: process.env.COGNITO_USER_POOL_ID,
+      tokenUse:   null,
+      clientId:   process.env.COGNITO_CLIENT_ID,
+    });
+  }
+  return verifier;
+}
 
 const cognitoAuth = async (req, res, next) => {
   const authHeader = req.headers.authorization;
@@ -21,15 +28,10 @@ const cognitoAuth = async (req, res, next) => {
   }
 
   try {
-    const payload = await verifier.verify(token);
-    
-    // FIX (Bug 1): Populate properties expected by resolveGymId and auth routes
-    req.cognitoSub = payload.sub;
+    const payload = await getVerifier().verify(token);
+    req.cognitoSub   = payload.sub;
     req.cognitoEmail = payload.email;
-    
-    // Keep req.user for backward compatibility
     req.user = { sub: payload.sub, email: payload.email };
-    
     next();
   } catch (err) {
     console.error('[cognitoAuth] verification failed:', err.message);

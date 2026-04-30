@@ -1,4 +1,5 @@
 import 'dart:async' show TimeoutException;
+import 'dart:convert';
 
 import 'package:flutter/foundation.dart'
     show defaultTargetPlatform, kIsWeb, TargetPlatform;
@@ -34,6 +35,26 @@ class ApiConfig {
     _savedBaseUrl = (v != null && v.trim().isNotEmpty) ? v.trim() : null;
     skipServerSetupGate =
         _hasCompileTimeOverride() || (_savedBaseUrl != null && _savedBaseUrl!.isNotEmpty);
+    await _fetchRemoteConfig();
+  }
+
+  static Future<void> _fetchRemoteConfig() async {
+    try {
+      final res = await http
+          .get(Uri.parse('$apiOrigin/api/config'))
+          .timeout(const Duration(seconds: 10));
+      if (res.statusCode == 200) {
+        final data = jsonDecode(res.body) as Map<String, dynamic>;
+        if ((data['cognitoUserPoolId'] as String?)?.isNotEmpty == true)
+          cognitoUserPoolId = data['cognitoUserPoolId'] as String;
+        if ((data['cognitoClientId'] as String?)?.isNotEmpty == true)
+          cognitoClientId = data['cognitoClientId'] as String;
+        if ((data['cognitoDomain'] as String?)?.isNotEmpty == true)
+          cognitoDomain = data['cognitoDomain'] as String;
+        if ((data['cognitoRegion'] as String?)?.isNotEmpty == true)
+          cognitoRegion = data['cognitoRegion'] as String;
+      }
+    } catch (_) {}
   }
 
   static const _prefsKey = 'api_base_url';
@@ -182,7 +203,11 @@ class ApiConfig {
     const host = String.fromEnvironment('API_HOST');
     if (host.isNotEmpty) return 'http://$host:5001/api';
     if (_savedBaseUrl != null && _savedBaseUrl!.isNotEmpty) return _savedBaseUrl!;
-    if (kIsWeb) return 'http://localhost:5001/api';
+    if (kIsWeb) {
+      final base = Uri.base;
+      final isLocal = base.host == 'localhost' || base.host == '127.0.0.1';
+      return isLocal ? 'http://localhost:5001/api' : '${base.origin}/api';
+    }
     switch (defaultTargetPlatform) {
       case TargetPlatform.android:
         return 'http://10.0.2.2:5001/api';
@@ -195,16 +220,10 @@ class ApiConfig {
 
   static String get apiOrigin => Uri.parse(baseUrl).origin;
 
-  static const String cognitoUserPoolId =
-      String.fromEnvironment('COGNITO_USER_POOL_ID', defaultValue: '');
-  static const String cognitoClientId =
-      String.fromEnvironment('COGNITO_CLIENT_ID', defaultValue: '');
-  static const String cognitoDomain =
-      String.fromEnvironment('COGNITO_DOMAIN', defaultValue: '');
-  static const String cognitoRegion =
-      String.fromEnvironment('COGNITO_REGION', defaultValue: '');
-  static const String cognitoClientSecret =
-      String.fromEnvironment('COGNITO_CLIENT_SECRET', defaultValue: '');
+  static String cognitoUserPoolId = '';
+  static String cognitoClientId   = '';
+  static String cognitoDomain     = '';
+  static String cognitoRegion     = '';
 
   static String get redirectUri {
     if (kIsWeb) {
